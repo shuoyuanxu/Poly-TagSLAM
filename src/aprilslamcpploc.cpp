@@ -814,10 +814,10 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         updateOdometryPose(poseSE2);  // Update pose without adding a keyframe
     }
     // Smooth the trajectory
-    if (index_of_pose >= 20) {
-        smoothTrajectory(5);
-    } else {
-        ROS_WARN("Skipping trajectory smoothing: only %d keyframes available.", index_of_pose);
+    if (usetrajsmoothing && !usekeyframe) {
+        if (index_of_pose >= smoothingStartIndex_) {
+            smoothTrajectory(smoothingwindow);
+        } 
     }
     // Publish path, landmarks, and odometry for visulisation
     publishRefinedOdom(odom_traj_pub_, Estimates_visulisation, index_of_pose, map_frame_id, robot_frame, refined_odom_csv);

@@ -39,7 +39,7 @@ rotationThreshold: 5
 
 # Outlier removal, dont use it when odometry is really bad!!!!!!
 useoutlierremoval: true
-jumpCombinedThreshold: 5.0
+jumpCombinedThreshold: 1
 outlierRemovalStartIndex_: 20 
 
 # Trajectory smooth
