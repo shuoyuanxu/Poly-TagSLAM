@@ -11,11 +11,7 @@ usepriortagtable: true
 batch_optimisation: true
 total_tags: 1000
 add2graph_threshold: 0.2
-<<<<<<< HEAD
 maxfactors: 100 # maximum number of poses in the factor graph
-=======
-maxfactors: 200 # maximum number of poses in the factor graph
->>>>>>> f78b9e945b4ec65f3fe13d78359fb8d2be762843
 useprunebysize: true # no point of using it with ISAM2
 useisam2: false # true for ISAM2, false for SAM
 
