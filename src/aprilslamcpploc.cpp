@@ -101,6 +101,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("camera_subscribers/mCam_subscriber/topic", mCam_topic);
 
     // Load outlier removal conditons
+<<<<<<< HEAD
     nh_.getParam("useoutlierremoval", useoutlierremoval); 
     nh_.getParam("jumpCombinedThreshold", jumpCombinedThreshold); 
     nh_.getParam("outlierRemovalStartIndex_", outlierRemovalStartIndex_);
@@ -110,6 +111,13 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("smoothingwindow", smoothingwindow); 
     nh_.getParam("smoothingStartIndex_", smoothingStartIndex_);
 
+=======
+    nh_.param("max_optimisation_translation", jumpTranslationThreshold, 1.5); // meters
+    nh_.param("max_optimisation_rotation", jumpRotationThreshold, 1.0); // radians
+    nh_.param("max_optimisation_jump", jumpCombinedThreshold, 1.0); 
+    nh_.param("outlier_removal_start_index", outlierRemovalStartIndex_, 20); // e.g. 10 timesteps
+    
+>>>>>>> f78b9e945b4ec65f3fe13d78359fb8d2be762843
     // save localisation result
     refined_odom_csv.open("/home/shuoyuan/catkin_slam_ws/src/aprilslamcpp/refined_odometry.csv", std::ios::out);
     raw_odom_csv.open("/home/shuoyuan/catkin_slam_ws/src/aprilslamcpp/raw_odometry.csv", std::ios::out);
@@ -568,6 +576,12 @@ void aprilslam::aprilslamcpp::updateOdometryPose(const gtsam::Pose2& poseSE2) {
     gtsam::Pose2 newPose = Estimates_visulisation.at<gtsam::Pose2>(gtsam::Symbol('X', index_of_pose - 1)).compose(odometry);
     Estimates_visulisation.insert(gtsam::Symbol('X', index_of_pose), newPose);
     lastPoseSE2_vis = poseSE2;
+<<<<<<< HEAD
+=======
+    ROS_INFO_STREAM("key:,  X(" << index_of_pose << ") = [x=" 
+        << newPose.x() << ", y=" << newPose.y() 
+        << ", theta=" << newPose.theta() << "]");
+>>>>>>> f78b9e945b4ec65f3fe13d78359fb8d2be762843
 }
 
 void aprilslam::aprilslamcpp::generate2bePublished() {
@@ -779,6 +793,7 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
                     keyframeEstimates_ = result;
                 } else {        
                     if (poseJump > jumpCombinedThreshold) {
+<<<<<<< HEAD
                         if (useoutlierremoval) {
                             ROS_WARN("Large pose jump detected (%.3f). Reverting to odometry or previous estimate for this step!", poseJump);
                             ROS_WARN("Discarding the newly optimized solution and trusting the old estimate.");
@@ -795,6 +810,31 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
                         }  
                     }
                 }
+=======
+                        ROS_WARN("Large pose jump detected (%.3f). Reverting to odometry or previous estimate for this step!", poseJump);
+                        ROS_WARN("Discarding the newly optimized solution and trusting the old estimate.");
+   
+                        // 1. Print the existing pose before the update
+                        gtsam::Pose2 oldPose = keyframeEstimates_.at<gtsam::Pose2>(gtsam::Symbol('X', index_of_pose));
+                    
+                        // 2. Compute the pose we want to revert to
+                        gtsam::Pose2 odometry = relPoseFG(lastPoseSE2_, poseSE2);
+                        gtsam::Pose2 newPose = lastPose_for_jump.compose(odometry);
+                    
+                        // 3. Update the keyframeEstimates_ with the new pose
+                        keyframeEstimates_.update(gtsam::Symbol('X', index_of_pose), newPose);
+                    
+                        // 4. Print the newly updated pose
+                        gtsam::Pose2 retrievedPose = keyframeEstimates_.at<gtsam::Pose2>(gtsam::Symbol('X', index_of_pose));
+
+                    } else {
+                        keyframeEstimates_ = result;
+                        if (useprunebysize) {
+                            pruneGraphByPoseCount(maxfactors);
+                        }
+                    }
+                }  
+>>>>>>> f78b9e945b4ec65f3fe13d78359fb8d2be762843
             }
             end_loop = ros::WallTime::now();
             elapsed = (end_loop - start_loop).toSec();
@@ -806,6 +846,12 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         
     Key_previous_pos = predictedPose;
     previousKeyframeSymbol = gtsam::Symbol('X', index_of_pose);  
+<<<<<<< HEAD
+=======
+    ROS_INFO_STREAM("key:,  X(" << index_of_pose << ") = [x=" 
+        << lastPose_for_jump.x() << ", y=" << lastPose_for_jump.y() 
+        << ", theta=" << lastPose_for_jump.theta() << "]");
+>>>>>>> f78b9e945b4ec65f3fe13d78359fb8d2be762843
     checkLoopClosure(detectedLandmarksCurrentPos);
     generate2bePublished();
     }
@@ -814,10 +860,17 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         updateOdometryPose(poseSE2);  // Update pose without adding a keyframe
     }
     // Smooth the trajectory
+<<<<<<< HEAD
     if (usetrajsmoothing && !usekeyframe) {
         if (index_of_pose >= smoothingStartIndex_) {
             smoothTrajectory(smoothingwindow);
         } 
+=======
+    if (index_of_pose >= 20) {
+        smoothTrajectory(5);
+    } else {
+        ROS_WARN("Skipping trajectory smoothing: only %d keyframes available.", index_of_pose);
+>>>>>>> f78b9e945b4ec65f3fe13d78359fb8d2be762843
     }
     // Publish path, landmarks, and odometry for visulisation
     publishRefinedOdom(odom_traj_pub_, Estimates_visulisation, index_of_pose, map_frame_id, robot_frame, refined_odom_csv);
