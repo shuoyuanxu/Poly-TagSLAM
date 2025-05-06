@@ -161,7 +161,8 @@ void publishRefinedOdom(ros::Publisher& odom_pub,
                         int index_of_pose,
                         const std::string& odom_frame,
                         const std::string& base_link_frame,
-                        std::ofstream& refined_odom_csv)
+                        std::ofstream& refined_odom_csv,
+                        const ros::Time& stamp)
 {
     gtsam::Symbol sym('X', index_of_pose);
 
@@ -180,7 +181,7 @@ void publishRefinedOdom(ros::Publisher& odom_pub,
 
     // 3) Fill nav_msgs::Odometry
     nav_msgs::Odometry odom_msg;
-    odom_msg.header.stamp = ros::Time::now();
+    odom_msg.header.stamp = stamp;
     odom_msg.header.frame_id = odom_frame;       // e.g. "odom"
     odom_msg.child_frame_id  = base_link_frame;  // e.g. "base_link"
 
@@ -196,7 +197,7 @@ void publishRefinedOdom(ros::Publisher& odom_pub,
     odom_pub.publish(odom_msg);
 
     // 5) Save to a csv
-    double time = ros::Time::now().toSec();
+    double time = stamp.toSec();
     refined_odom_csv << std::fixed << std::setprecision(6)
                     << time << ","
                     << refinedPose.x() << ","

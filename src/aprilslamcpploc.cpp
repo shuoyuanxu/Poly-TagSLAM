@@ -820,7 +820,7 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         } 
     }
     // Publish path, landmarks, and odometry for visulisation
-    publishRefinedOdom(odom_traj_pub_, Estimates_visulisation, index_of_pose, map_frame_id, robot_frame, refined_odom_csv);
+    publishRefinedOdom(odom_traj_pub_, Estimates_visulisation, index_of_pose, map_frame_id, robot_frame, refined_odom_csv, msg->header.stamp);
     aprilslam::publishPath(path_pub_, Estimates_visulisation, index_of_pose, map_frame_id);
 }
 }
