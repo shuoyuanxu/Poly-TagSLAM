@@ -706,7 +706,8 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
     // Convert the incoming odometry message to a simpler (x, y, theta) format using a previously defined method
     gtsam::Pose2 poseSE2 = translateOdomMsg(msg);
     
-    double raw_time = msg->header.stamp.toSec();
+    // double raw_time = msg->header.stamp.toSec();
+    double raw_time = ros::Time::now().toSec();
     raw_odom_csv << std::fixed << std::setprecision(6)
                 << raw_time << ","
                 << poseSE2.x() << ","
