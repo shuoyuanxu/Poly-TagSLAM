@@ -197,14 +197,26 @@ void aprilslamcpp::pfInitCallback(const ros::TimerEvent& event) {
                                        mcam_baselink_transform, rcam_baselink_transform, lcam_baselink_transform);
     const std::vector<int>& Id = detections.first;
     const std::vector<Eigen::Vector2d>& tagPos = detections.second;
-
+        
+    std::vector<int> validIds;
+    std::vector<Eigen::Vector2d> validTagPos;
+    // Ensure all used tags exists int the prior tag table
+    for (size_t i = 0; i < Id.size(); ++i) {
+        if (savedLandmarks.find(Id[i]) != savedLandmarks.end()) {
+            validIds.push_back(Id[i]);
+            validTagPos.push_back(tagPos[i]);
+        } else {
+            ROS_WARN("Skipping unknown tag ID: %d", Id[i]);
+        }
+    }
+    
     // If no tags detected, cannot start or continue PF initialization
-    if (Id.empty()) {
+    if (validIds.empty()) {
         ROS_INFO("No tags detected, waiting for detections...");
         return;
     }
 
-    ROS_INFO("Number of tags observed: %zu", Id.size());
+    ROS_INFO("Number of tags observed: %zu", validIds.size());
 
     double currentTime = ros::Time::now().toSec();
 
@@ -214,7 +226,7 @@ void aprilslamcpp::pfInitCallback(const ros::TimerEvent& event) {
         pfInitStartTime_ = currentTime;
 
         // Initialize particles from the first detected tag
-        x_P_pf_ = initParticlesFromFirstTag(Id, tagPos, savedLandmarks, PFWaitTime);
+        x_P_pf_ = initParticlesFromFirstTag(validIds, validTagPos, savedLandmarks, PFWaitTime);
 
         ROS_INFO("PF initialization started.");
     }
@@ -223,10 +235,10 @@ void aprilslamcpp::pfInitCallback(const ros::TimerEvent& event) {
 
     if (elapsed < PFWaitTime) {
         // Within the PF init duration, run PF update
-        x_P_pf_ = particleFilter(Id, tagPos, savedLandmarks, x_P_pf_, PFWaitTime, rngVar_, brngVar_);
+        x_P_pf_ = particleFilter(validIds, validTagPos, savedLandmarks, x_P_pf_, PFWaitTime, rngVar_, brngVar_);
     } else {
         // PF initialization time is up. Run PF one last time to get final estimate
-        x_P_pf_ = particleFilter(Id, tagPos, savedLandmarks, x_P_pf_, PFWaitTime, rngVar_, brngVar_);
+        x_P_pf_ = particleFilter(validIds, validTagPos, savedLandmarks, x_P_pf_, PFWaitTime, rngVar_, brngVar_);
 
         // Compute x_est as mean of particles
         Eigen::Vector3d sum_states(0,0,0);
