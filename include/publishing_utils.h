@@ -70,10 +70,15 @@ namespace aprilslam {
     gtsam::Pose2 relPoseFG(const gtsam::Pose2& lastPoseSE2, const gtsam::Pose2& PoseSE2);
     // Assuming detection messages include id and pose information
     struct Detection {
-    int Id;
-    geometry_msgs::Pose Pose;
+        int Id;
+        geometry_msgs::Pose Pose;
     };
-
+    // Camera 
+    struct CameraInfo {
+        std::string name;
+        std::string topic;
+        Eigen::Vector3d transform;
+    };
     struct CameraMessage {
         std::vector<Detection> Detections;
     };
