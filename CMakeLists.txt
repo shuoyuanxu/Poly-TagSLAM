@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.5)
 project(aprilslamcpp)
 
 # Set GTSAM_DIR to the directory containing GTSAMConfig.cmake

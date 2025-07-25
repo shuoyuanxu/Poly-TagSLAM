@@ -97,3 +97,16 @@ camera_subscribers:
     topic: "/m/tag_detections"
     type: "apriltag_ros/AprilTagDetectionArray"
     data_format: "struct"
+
+# Camera configuration
+camera_config:
+  cameras:
+    - name: lCam
+      topic: "/left_cam/apriltag_detections"
+      transform: [0, 0, 1.57079632679]
+    - name: rCam
+      topic: "/right_cam/apriltag_detections"
+      transform: [0, 0, -1.57079632679]
+    - name: mCam
+      topic: "/middle_cam/apriltag_detections"
+      transform: [0.0, 0.0, 0.0]
