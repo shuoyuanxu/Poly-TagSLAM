@@ -4,7 +4,7 @@
 namespace aprilslam {
 // Constructor
 aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
-    : nh_(node_handle), tf_listener_(tf_buffer_), mCam_data_received_(false), rCam_data_received_(false), lCam_data_received_(false) { 
+    : nh_(node_handle), tf_listener_(tf_buffer_) { 
     
     // Read topics and corresponding frame
     std::string odom_topic, trajectory_topic;
@@ -42,20 +42,63 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("savetaglocation", savetaglocation);
     nh_.getParam("usepriortagtable", usepriortagtable);
 
-    // Camera transformation parameters
-    nh_.getParam("camera_parameters/xyTrans_lcam_baselink", xyTrans_lcam_baselink);
-    nh_.getParam("camera_parameters/xyTrans_rcam_baselink", xyTrans_rcam_baselink);
-    nh_.getParam("camera_parameters/xyTrans_mcam_baselink", xyTrans_mcam_baselink);
-    
-    // Convert to Eigen::Vector3d
-    mcam_baselink_transform = Eigen::Vector3d(xyTrans_mcam_baselink[0], xyTrans_mcam_baselink[1], xyTrans_mcam_baselink[2]);
-    rcam_baselink_transform = Eigen::Vector3d(xyTrans_rcam_baselink[0], xyTrans_rcam_baselink[1], xyTrans_rcam_baselink[2]);
-    lcam_baselink_transform = Eigen::Vector3d(xyTrans_lcam_baselink[0], xyTrans_lcam_baselink[1], xyTrans_lcam_baselink[2]);
+    // Camera topic and extrinsic loader
+    if (nh_.getParam("camera_config/cameras", camera_list) && camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
+        for (int i = 0; i < camera_list.size(); ++i) {
+            if (camera_list[i].getType() != XmlRpc::XmlRpcValue::TypeStruct) {
+                ROS_WARN("Invalid camera entry in camera_config/cameras[%d]", i);
+                continue;
+            }
 
-    // Load camera topics
-    nh_.getParam("camera_subscribers/lCam_subscriber/topic", lCam_topic);
-    nh_.getParam("camera_subscribers/rCam_subscriber/topic", rCam_topic);
-    nh_.getParam("camera_subscribers/mCam_subscriber/topic", mCam_topic);
+            std::string name = static_cast<std::string>(camera_list[i]["name"]);
+            std::string topic = static_cast<std::string>(camera_list[i]["topic"]);
+            std::vector<double> tf;
+            try {
+                if (camera_list[i]["transform"].getType() != XmlRpc::XmlRpcValue::TypeArray) {
+                    ROS_ERROR_STREAM("Camera " << name << " 'transform' is not a list.");
+                    continue;
+                }
+
+                XmlRpc::XmlRpcValue tf_list = camera_list[i]["transform"];
+                for (int j = 0; j < tf_list.size(); ++j) {
+                    if (tf_list[j].getType() == XmlRpc::XmlRpcValue::TypeInt)
+                        tf.push_back(static_cast<int>(tf_list[j]));
+                    else if (tf_list[j].getType() == XmlRpc::XmlRpcValue::TypeDouble)
+                        tf.push_back(static_cast<double>(tf_list[j]));
+                    else {
+                        ROS_WARN_STREAM("Invalid value type in 'transform'[" << j << "]");
+                        tf.push_back(0.0);  // Default to 0
+                    }
+                }
+
+                if (tf.size() != 3) {
+                    ROS_ERROR_STREAM("Camera " << name << " 'transform' should have 3 values, got " << tf.size());
+                    continue;
+                }
+
+            } catch (const XmlRpc::XmlRpcException& e) {
+                ROS_FATAL_STREAM("Failed to parse camera[" << i << "] transform: " << e.getMessage());
+                ros::shutdown();
+                return;
+            }
+
+
+            if (tf.size() != 3) {
+                ROS_WARN("Invalid transform size for camera %s", name.c_str());
+                continue;
+            }
+
+            Eigen::Vector3d transform(tf[0], tf[1], tf[2]);
+
+            CameraInfo cam_info{name, topic, transform};
+            camera_infos_.emplace_back(cam_info);
+
+            ROS_INFO("Loaded camera [%s] with topic [%s] and transform [%f %f %f]",
+                     name.c_str(), topic.c_str(), transform[0], transform[1], transform[2]);
+        }
+    } else {
+        ROS_WARN("Failed to load camera_config/cameras or invalid format.");
+    }
 
     // Initialize noise models
     odometryNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << odometry_noise[0], odometry_noise[1], odometry_noise[2]).finished());
@@ -84,9 +127,15 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     keyframeGraph_ = gtsam::NonlinearFactorGraph();
 
     // Initialize camera subscribers
-    mCam_subscriber = nh_.subscribe(mCam_topic, 1000, &aprilslamcpp::mCamCallback, this);
-    rCam_subscriber = nh_.subscribe(rCam_topic, 1000, &aprilslamcpp::rCamCallback, this);
-    lCam_subscriber = nh_.subscribe(lCam_topic, 1000, &aprilslamcpp::lCamCallback, this);
+    for (const auto& cam : camera_infos_) {
+        ros::Subscriber sub = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(
+            cam.topic, 1,
+            boost::bind(&aprilslamcpp::cameraCallback, this, _1, cam.name)
+        );
+        camera_subscribers_.push_back(sub);
+        ROS_INFO_STREAM("Subscribed to camera topic: " << cam.topic << " with name: " << cam.name);
+
+    }
 
     // Subscriptions and Publications
     odom_sub_ = nh_.subscribe(odom_topic, 10, &aprilslamcpp::addOdomFactor, this);
@@ -96,18 +145,15 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
 
     // Timer to periodically check if valid data has been received by any camera
     check_data_timer_ = nh_.createTimer(ros::Duration(2.0), [this, inactivity_threshold](const ros::TimerEvent&) {
-        if (mCam_data_received_ || rCam_data_received_ || lCam_data_received_) {
-            accumulated_time_ = 0.0;  // Reset accumulated time on valid data
-            mCam_data_received_ = false;  // Reset flags to check for new data next time
-            rCam_data_received_ = false;
-            lCam_data_received_ = false;
+        if (!received_camera_names_.empty()) {
+            accumulated_time_ = 0.0;
+            received_camera_names_.clear();  // Reset for next cycle
         } else {
-            accumulated_time_ += 2.0;  // Accumulate time when no valid data is received
+            accumulated_time_ += 2.0;
             ROS_WARN("No new valid data received from any camera. Accumulated time: %.1f seconds", accumulated_time_);
 
-            // If no data received for inactivity_threshold from any camera, shut down+
             if (accumulated_time_ >= inactivity_threshold) {
-                ROS_ERROR("No valid data from mCam, rCam, or lCam for 15 seconds. Shutting down.");
+                ROS_ERROR("No valid data from any camera for %.1f seconds. Shutting down.", inactivity_threshold);
                 this->~aprilslamcpp();  // Trigger the destructor
             }
         }
@@ -156,42 +202,22 @@ aprilslamcpp::~aprilslamcpp() {
     ROS_INFO("SAMOptimise() executed successfully.");
 }
 
-// Callback function for mCam topic
-void aprilslamcpp::mCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
-    if (msg->detections.empty()) {
-        // No detections in the message, so we consider the data as "empty"
-        mCam_data_received_ = false;
+// Callback function for Cam topic
+void aprilslamcpp::cameraCallback(
+    const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg,
+    const std::string& camera_name) {
+
+    ROS_INFO_STREAM("Received detection message from camera: " << camera_name);
+    
+    if (!msg->detections.empty()) {
+        ROS_INFO_STREAM("Camera [" << camera_name << "] detected " << msg->detections.size() << " tags.");
+        camera_detections_[camera_name] = msg;
+        received_camera_names_.insert(camera_name);
     } else {
-        // Valid data received (detections are present)
-        mCam_msg = msg;
-        mCam_data_received_ = true;
+        ROS_WARN_STREAM("Camera [" << camera_name << "] message had no detections.");
+        camera_detections_.erase(camera_name);
     }
 }
-
-// Callback function for rCam topic
-void aprilslamcpp::rCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
-    if (msg->detections.empty()) {
-        // No detections in the message, so we consider the data as "empty"
-        rCam_data_received_ = false;
-    } else {
-        // Valid data received (detections are present)
-        rCam_msg = msg;
-        rCam_data_received_ = true;
-    }
-}
-
-// Callback function for lCam topic
-void aprilslamcpp::lCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
-    if (msg->detections.empty()) {
-        // No detections in the message, so we consider the data as "empty"
-        lCam_data_received_ = false;
-    } else {
-        // Valid data received (detections are present)
-        lCam_msg = msg;
-        lCam_data_received_ = true;
-    }
-}
-
 
 // Initialization of GTSAM components
 void aprilslamcpp::initializeGTSAM() { 
@@ -367,10 +393,13 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
     std::set<gtsam::Symbol> detectedLandmarksCurrentPos;
     
     // Iterate through all landmark detected IDs
-    if (mCam_msg && rCam_msg && lCam_msg) {  // Ensure the messages have been received
-        auto detections = getCamDetections(mCam_msg, rCam_msg, lCam_msg, mcam_baselink_transform, rcam_baselink_transform, lcam_baselink_transform);
+    auto detections = getCamDetections(camera_infos_, camera_detections_);
+    if (!detections.first.empty()) {
         detectedLandmarksCurrentPos = updateGraphWithLandmarks(detectedLandmarksCurrentPos, detections);
-    }      
+    } else {
+        ROS_WARN("No valid detections from any camera.");
+    }
+    
     lastPoseSE2_ = poseSE2;
     Key_previous_pos = predictedPose;
 

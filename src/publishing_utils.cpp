@@ -281,19 +281,38 @@ void processDetections(const apriltag_ros::AprilTagDetectionArray::ConstPtr& cam
 
 // funtion for processing tag detection topics into IDs and TagPoss
 std::pair<std::vector<int>, std::vector<Eigen::Vector2d>> getCamDetections(
-    const std::vector<std::pair<apriltag_ros::AprilTagDetectionArray::ConstPtr, Eigen::Vector3d>>& cam_data) {
+    const std::vector<CameraInfo>& camera_infos,
+    const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections) {
 
-    std::vector<int> Ids;
-    std::vector<Eigen::Vector2d> tagPoss;
+    std::vector<int> ids;
+    std::vector<Eigen::Vector2d> positions;
 
-    for (const auto& [msg, transform] : cam_data) {
-        if (msg) {
-            processDetections(msg, transform, Ids, tagPoss);
+    for (const auto& cam : camera_infos) {
+        auto it = camera_detections.find(cam.name);
+        if (it == camera_detections.end()) {
+            ROS_WARN_STREAM("No detection found for camera: " << cam.name);
+            continue;
+        }
+
+        const auto& detections = it->second->detections;
+        ROS_INFO_STREAM("Processing " << detections.size() << " detections from camera: " << cam.name);
+        for (const auto& det : detections) {
+            if (!det.id.empty()) {
+                int tag_id = det.id[0];
+                Eigen::Vector2d rel_pos(det.pose.pose.pose.position.x, det.pose.pose.pose.position.z);
+                ids.push_back(tag_id);
+                positions.push_back(rel_pos);
+
+                ROS_INFO_STREAM("  --> Tag ID: " << tag_id << " at ("
+                                << rel_pos.x() << ", " << rel_pos.y() << ")");
+            }
         }
     }
 
-    return std::make_pair(Ids, tagPoss);
+    ROS_INFO_STREAM("Total tags collected: " << ids.size());
+    return std::make_pair(ids, positions);
 }
+
 
 void visualizeLoopClosure(ros::Publisher& lc_pub, const gtsam::Pose2& currentPose, const gtsam::Pose2& keyframePose, int currentPoseIndex, const std::string& frame_id) {
     visualization_msgs::Marker line_marker;

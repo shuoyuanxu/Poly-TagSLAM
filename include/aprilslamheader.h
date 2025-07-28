@@ -1,5 +1,6 @@
 #ifndef APRIL_SLAM_H
 #define APRIL_SLAM_H
+#include "publishing_utils.h"
 #include <ros/ros.h>
 #include <ros/package.h>
 #include <tf2_ros/buffer.h>
@@ -32,6 +33,9 @@
 #include <cmath>
 #include <gtsam/nonlinear/Marginals.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <xmlrpcpp/XmlRpcException.h>
+#include <XmlRpcValue.h>
+
 
 namespace aprilslam {
 
@@ -52,6 +56,7 @@ public:
     void addOdomFactor(const nav_msgs::Odometry::ConstPtr& msg);
     void checkLoopClosure(const std::set<gtsam::Symbol>& detectedLandmarks);
     bool shouldAddKeyframe(const gtsam::Pose2& lastPose, const gtsam::Pose2& currentPose, std::set<gtsam::Symbol> oldlandmarks, std::set<gtsam::Symbol> detectedLandmarksCurrentPos);
+    void cameraCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg, const std::string& camera_name);
     void mCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg);
     void rCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg);
     void lCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg);
@@ -69,17 +74,27 @@ private:
     nav_msgs::Path path;
     ros::NodeHandle nh_;
     ros::Subscriber odom_sub_;
+    // camera info
+    std::vector<aprilslam::CameraInfo> camera_infos_;
+    std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr> camera_detections_;
+    XmlRpc::XmlRpcValue camera_list;
+    std::vector<ros::Subscriber> camera_subscribers_;
+    std::set<std::string> received_camera_names_;
+
     ros::Subscriber mCam_subscriber;
     ros::Subscriber rCam_subscriber;
     ros::Subscriber lCam_subscriber;
-    ros::Subscriber cmd_vel_sub_;
     apriltag_ros::AprilTagDetectionArray::ConstPtr mCam_msg;
     apriltag_ros::AprilTagDetectionArray::ConstPtr rCam_msg;
     apriltag_ros::AprilTagDetectionArray::ConstPtr lCam_msg;
+    // cmd_vel subscriber
+    ros::Subscriber cmd_vel_sub_;
     double linear_x_velocity_;  // Stores the latest controller input linear.x value
+    // ros sub and put info
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
     tf2_ros::TransformBroadcaster tf_broadcaster;
+    // gtsam variables
     std::map<gtsam::Symbol, std::map<gtsam::Symbol, std::tuple<double, double>>> poseToLandmarkMeasurementsMap;  //storing X-L pair
     std::map<gtsam::Key, gtsam::Point2> historicLandmarks;     // Maintain a persistent storage for historic landmarks
     gtsam::Values landmarkEstimates;  // for unwhitten error computing 

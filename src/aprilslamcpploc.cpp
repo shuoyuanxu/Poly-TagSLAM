@@ -69,6 +69,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("distanceThreshold", distanceThreshold);
     nh_.getParam("rotationThreshold", rotationThreshold);
     nh_.getParam("usekeyframe", usekeyframe);
+    gtsam::Values landmarkEstimates;  // for unwhitten error computing 
 
     // Stationay conditions
     nh_.getParam("stationary_position_threshold", stationary_position_threshold);
@@ -86,19 +87,52 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("savetaglocation", savetaglocation);
     nh_.getParam("usepriortagtable", usepriortagtable);
 
-    // Camera transformation parameters
-    nh_.getParam("camera_parameters/xyTrans_lcam_baselink", xyTrans_lcam_baselink);
-    nh_.getParam("camera_parameters/xyTrans_rcam_baselink", xyTrans_rcam_baselink);
-    nh_.getParam("camera_parameters/xyTrans_mcam_baselink", xyTrans_mcam_baselink);
-    // Convert to Eigen::Vector3d
-    mcam_baselink_transform = Eigen::Vector3d(xyTrans_mcam_baselink[0], xyTrans_mcam_baselink[1], xyTrans_mcam_baselink[2]);
-    rcam_baselink_transform = Eigen::Vector3d(xyTrans_rcam_baselink[0], xyTrans_rcam_baselink[1], xyTrans_rcam_baselink[2]);
-    lcam_baselink_transform = Eigen::Vector3d(xyTrans_lcam_baselink[0], xyTrans_lcam_baselink[1], xyTrans_lcam_baselink[2]);
+    // Camera topic and extrinsic loader
+    if (nh_.getParam("camera_config/cameras", camera_list) && camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
+        for (int i = 0; i < camera_list.size(); ++i) {
+            if (camera_list[i].getType() != XmlRpc::XmlRpcValue::TypeStruct) {
+                ROS_WARN("Invalid camera entry in camera_config/cameras[%d]", i);
+                continue;
+            }
 
-    // Load camera topics
-    nh_.getParam("camera_subscribers/lCam_subscriber/topic", lCam_topic);
-    nh_.getParam("camera_subscribers/rCam_subscriber/topic", rCam_topic);
-    nh_.getParam("camera_subscribers/mCam_subscriber/topic", mCam_topic);
+            std::string name = static_cast<std::string>(camera_list[i]["name"]);
+            std::string topic = static_cast<std::string>(camera_list[i]["topic"]);
+            XmlRpc::XmlRpcValue tf_list = camera_list[i]["transform"];
+            std::vector<double> tf;
+            for (int j = 0; j < tf_list.size(); ++j) {
+                tf.push_back(static_cast<double>(tf_list[j]));
+            }
+
+            if (tf.size() != 3) {
+                ROS_WARN("Invalid transform size for camera %s", name.c_str());
+                continue;
+            }
+
+            Eigen::Vector3d transform(tf[0], tf[1], tf[2]);
+
+            CameraInfo cam_info{name, topic, transform};
+            camera_infos_.emplace_back(cam_info);
+
+            ROS_INFO("Loaded camera [%s] with topic [%s] and transform [%f %f %f]",
+                     name.c_str(), topic.c_str(), transform[0], transform[1], transform[2]);
+        }
+    } else {
+        ROS_WARN("Failed to load camera_config/cameras or invalid format.");
+    }
+
+    // Camera transformation parameters
+    // nh_.getParam("camera_parameters/xyTrans_lcam_baselink", xyTrans_lcam_baselink);
+    // nh_.getParam("camera_parameters/xyTrans_rcam_baselink", xyTrans_rcam_baselink);
+    // nh_.getParam("camera_parameters/xyTrans_mcam_baselink", xyTrans_mcam_baselink);
+    // // Convert to Eigen::Vector3d
+    // mcam_baselink_transform = Eigen::Vector3d(xyTrans_mcam_baselink[0], xyTrans_mcam_baselink[1], xyTrans_mcam_baselink[2]);
+    // rcam_baselink_transform = Eigen::Vector3d(xyTrans_rcam_baselink[0], xyTrans_rcam_baselink[1], xyTrans_rcam_baselink[2]);
+    // lcam_baselink_transform = Eigen::Vector3d(xyTrans_lcam_baselink[0], xyTrans_lcam_baselink[1], xyTrans_lcam_baselink[2]);
+
+    // // Load camera topics
+    // nh_.getParam("camera_subscribers/lCam_subscriber/topic", lCam_topic);
+    // nh_.getParam("camera_subscribers/rCam_subscriber/topic", rCam_topic);
+    // nh_.getParam("camera_subscribers/mCam_subscriber/topic", mCam_topic);
 
     // Load outlier removal conditons
     nh_.getParam("useoutlierremoval", useoutlierremoval); 
@@ -148,9 +182,18 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     keyframeGraph_ = gtsam::NonlinearFactorGraph();
 
     // Initialize camera subscribers
-    mCam_subscriber = nh_.subscribe(mCam_topic, 1000, &aprilslamcpp::mCamCallback, this);
-    rCam_subscriber = nh_.subscribe(rCam_topic, 1000, &aprilslamcpp::rCamCallback, this);
-    lCam_subscriber = nh_.subscribe(lCam_topic, 1000, &aprilslamcpp::lCamCallback, this);
+    
+    for (const auto& cam : camera_infos_) {
+        ros::Subscriber sub = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(
+            cam.topic, 1,
+            boost::bind(&aprilslamcpp::cameraCallback, this, _1, cam.name)
+        );
+        camera_subscribers_.push_back(sub);
+    }
+
+    // mCam_subscriber = nh_.subscribe(mCam_topic, 1000, &aprilslamcpp::mCamCallback, this);
+    // rCam_subscriber = nh_.subscribe(rCam_topic, 1000, &aprilslamcpp::rCamCallback, this);
+    // lCam_subscriber = nh_.subscribe(lCam_topic, 1000, &aprilslamcpp::lCamCallback, this);
     
     // Initialise pose0 using particle filter, set a timer to ensure the initilisation is done properly
     if (usePFinitialise) {
@@ -193,8 +236,7 @@ void aprilslamcpp::pfInitCallback(const ros::TimerEvent& event) {
     }
 
     // Attempt to get camera detections
-    auto detections = getCamDetections(mCam_msg, rCam_msg, lCam_msg,
-                                       mcam_baselink_transform, rcam_baselink_transform, lcam_baselink_transform);
+    auto detections = getCamDetections(camera_infos_, camera_detections_);
     const std::vector<int>& Id = detections.first;
     const std::vector<Eigen::Vector2d>& tagPos = detections.second;
         
@@ -278,18 +320,29 @@ void aprilslamcpp::pfInitCallback(const ros::TimerEvent& event) {
     }
 }
 
-// Camera callback functions
-void aprilslamcpp::mCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
-    mCam_msg = msg;
+void aprilslamcpp::cameraCallback(
+    const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg,
+    const std::string& camera_name) {
+    
+    if (!msg->detections.empty()) {
+        camera_detections_[camera_name] = msg;
+    } else {
+        camera_detections_.erase(camera_name);
+    }
 }
 
-void aprilslamcpp::rCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
-    rCam_msg = msg;
-}
+// // Camera callback functions
+// void aprilslamcpp::mCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
+//     mCam_msg = msg;
+// }
 
-void aprilslamcpp::lCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
-    lCam_msg = msg;
-}
+// void aprilslamcpp::rCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
+//     rCam_msg = msg;
+// }
+
+// void aprilslamcpp::lCamCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg) {
+//     lCam_msg = msg;
+// }
 
 // Applies a moving average filter to smooth the trajectory
 void aprilslamcpp::smoothTrajectory(int window_size) {
@@ -761,7 +814,7 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         // Iterate through all landmark detected IDs
         start_loop = ros::WallTime::now();
         if (mCam_msg && rCam_msg && lCam_msg) {  // Ensure the messages have been received
-            auto detections = getCamDetections(mCam_msg, rCam_msg, lCam_msg, mcam_baselink_transform, rcam_baselink_transform, lcam_baselink_transform);
+            auto detections = getCamDetections(camera_infos_, camera_detections_);
             detectedLandmarksCurrentPos = updateGraphWithLandmarks(detectedLandmarksCurrentPos, detections);
         }
 

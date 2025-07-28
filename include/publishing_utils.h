@@ -26,6 +26,12 @@
 #include <algorithm>
 
 namespace aprilslam {
+     // Camera 
+    struct CameraInfo {
+        std::string name;
+        std::string topic;
+        Eigen::Vector3d transform;
+    };
     void visualizeLoopClosure(ros::Publisher& lc_pub, const gtsam::Pose2& currentPose, const gtsam::Pose2& keyframePose, int currentPoseIndex, const std::string& frame_id);
     void publishMapToOdomTF(tf2_ros::TransformBroadcaster& tf_broadcaster, 
                             const gtsam::Values& result, int latest_index, 
@@ -46,13 +52,8 @@ namespace aprilslam {
         const Eigen::Vector3d& xyTrans_cam_baselink, 
         std::vector<int>& Ids, 
         std::vector<Eigen::Vector2d>& tagPoss);
-    std::pair<std::vector<int>, std::vector<Eigen::Vector2d>> getCamDetections(
-        const apriltag_ros::AprilTagDetectionArray::ConstPtr& mCam_msg,
-        const apriltag_ros::AprilTagDetectionArray::ConstPtr& rCam_msg,
-        const apriltag_ros::AprilTagDetectionArray::ConstPtr& lCam_msg,
-        const Eigen::Vector3d& xyTrans_lcam_baselink,
-        const Eigen::Vector3d& xyTrans_rcam_baselink,
-        const Eigen::Vector3d& xyTrans_mcam_baselink);
+    std::pair<std::vector<int>, std::vector<Eigen::Vector2d>> getCamDetections(const std::vector<CameraInfo>& camera_infos,
+                 const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections);
     std::vector<Eigen::Vector3d> initParticles(int Ninit);
     std::vector<Eigen::Vector3d> particleFilter(const std::vector<int>& Id,
         const std::vector<Eigen::Vector2d>& tagPos,
@@ -68,20 +69,6 @@ namespace aprilslam {
         int Ninit);
     double wrapToPi(double angle);
     gtsam::Pose2 relPoseFG(const gtsam::Pose2& lastPoseSE2, const gtsam::Pose2& PoseSE2);
-    // Assuming detection messages include id and pose information
-    struct Detection {
-        int Id;
-        geometry_msgs::Pose Pose;
-    };
-    // Camera 
-    struct CameraInfo {
-        std::string name;
-        std::string topic;
-        Eigen::Vector3d transform;
-    };
-    struct CameraMessage {
-        std::vector<Detection> Detections;
-    };
 }
 
 #endif
