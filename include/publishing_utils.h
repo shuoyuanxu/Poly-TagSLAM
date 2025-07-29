@@ -30,6 +30,7 @@ namespace aprilslam {
     struct CameraInfo {
         std::string name;
         std::string topic;
+        std::string frame_id;            // <--- NEW
         Eigen::Vector3d transform;
     };
     void visualizeLoopClosure(ros::Publisher& lc_pub, const gtsam::Pose2& currentPose, const gtsam::Pose2& keyframePose, int currentPoseIndex, const std::string& frame_id);

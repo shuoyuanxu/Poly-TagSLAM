@@ -65,6 +65,9 @@ public:
     void pruneGraphByPoseCount(int maxPoses);
     void smoothTrajectory(int window_size); 
     double computePoseDelta(const gtsam::Pose2& oldPose, const gtsam::Pose2& newPose);
+    bool getStaticTransform(const std::string& target_frame,
+                    const std::string& source_frame,
+                    tf2::Transform& out_tf);
 private:
     ros::Timer check_data_timer_;  // Declare the timer here
     ros::Publisher path_pub_;
