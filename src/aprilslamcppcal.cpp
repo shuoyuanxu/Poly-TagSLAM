@@ -92,9 +92,6 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
 
             CameraInfo cam_info{name, topic, transform};
             camera_infos_.emplace_back(cam_info);
-
-            ROS_INFO("Loaded camera [%s] with topic [%s] and transform [%f %f %f]",
-                     name.c_str(), topic.c_str(), transform[0], transform[1], transform[2]);
         }
     } else {
         ROS_WARN("Failed to load camera_config/cameras or invalid format.");
@@ -133,8 +130,6 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
             boost::bind(&aprilslamcpp::cameraCallback, this, _1, cam.name)
         );
         camera_subscribers_.push_back(sub);
-        ROS_INFO_STREAM("Subscribed to camera topic: " << cam.topic << " with name: " << cam.name);
-
     }
 
     // Subscriptions and Publications
@@ -205,16 +200,11 @@ aprilslamcpp::~aprilslamcpp() {
 // Callback function for Cam topic
 void aprilslamcpp::cameraCallback(
     const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg,
-    const std::string& camera_name) {
-
-    ROS_INFO_STREAM("Received detection message from camera: " << camera_name);
-    
+    const std::string& camera_name) {    
     if (!msg->detections.empty()) {
-        ROS_INFO_STREAM("Camera [" << camera_name << "] detected " << msg->detections.size() << " tags.");
         camera_detections_[camera_name] = msg;
         received_camera_names_.insert(camera_name);
     } else {
-        ROS_WARN_STREAM("Camera [" << camera_name << "] message had no detections.");
         camera_detections_.erase(camera_name);
     }
 }
@@ -396,8 +386,6 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
     auto detections = getCamDetections(camera_infos_, camera_detections_);
     if (!detections.first.empty()) {
         detectedLandmarksCurrentPos = updateGraphWithLandmarks(detectedLandmarksCurrentPos, detections);
-    } else {
-        ROS_WARN("No valid detections from any camera.");
     }
     
     lastPoseSE2_ = poseSE2;

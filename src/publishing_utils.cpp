@@ -284,35 +284,20 @@ std::pair<std::vector<int>, std::vector<Eigen::Vector2d>> getCamDetections(
     const std::vector<CameraInfo>& camera_infos,
     const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections) {
 
-    std::vector<int> ids;
-    std::vector<Eigen::Vector2d> positions;
+    std::vector<int> Ids;
+    std::vector<Eigen::Vector2d> tagPoss;
 
     for (const auto& cam : camera_infos) {
         auto it = camera_detections.find(cam.name);
         if (it == camera_detections.end()) {
-            ROS_WARN_STREAM("No detection found for camera: " << cam.name);
             continue;
         }
 
-        const auto& detections = it->second->detections;
-        ROS_INFO_STREAM("Processing " << detections.size() << " detections from camera: " << cam.name);
-        for (const auto& det : detections) {
-            if (!det.id.empty()) {
-                int tag_id = det.id[0];
-                Eigen::Vector2d rel_pos(det.pose.pose.pose.position.x, det.pose.pose.pose.position.z);
-                ids.push_back(tag_id);
-                positions.push_back(rel_pos);
-
-                ROS_INFO_STREAM("  --> Tag ID: " << tag_id << " at ("
-                                << rel_pos.x() << ", " << rel_pos.y() << ")");
-            }
-        }
+        // This calls the original processDetections with the correct transformation
+        processDetections(it->second, cam.transform, Ids, tagPoss);
     }
-
-    ROS_INFO_STREAM("Total tags collected: " << ids.size());
-    return std::make_pair(ids, positions);
+    return std::make_pair(Ids, tagPoss);
 }
-
 
 void visualizeLoopClosure(ros::Publisher& lc_pub, const gtsam::Pose2& currentPose, const gtsam::Pose2& keyframePose, int currentPoseIndex, const std::string& frame_id) {
     visualization_msgs::Marker line_marker;

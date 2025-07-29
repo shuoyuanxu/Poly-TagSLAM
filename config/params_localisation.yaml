@@ -82,10 +82,13 @@ camera_config:
   cameras:
     - name: lCam
       topic: "/l/tag_detections"
+      frame: "usb_cam_l"
       transform: [0, 0, 1.57079632679]
     - name: rCam
       topic: "/r/tag_detections"
       transform: [0, 0, -1.57079632679]
+      frame: "usb_cam_r"
     - name: mCam
       topic: "/m/tag_detections"
       transform: [0.0, 0.0, 0.0]
+      frame: "usb_cam_m"
