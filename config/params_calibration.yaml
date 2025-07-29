@@ -34,6 +34,8 @@ noise_models:
     - 0.01
     - 0.01
 
+use_tf_lookup: false
+
 # Camera configuration
 camera_config:
   cameras:
