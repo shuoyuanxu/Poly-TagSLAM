@@ -43,6 +43,10 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("usepriortagtable", usepriortagtable);
 
     // Load camera topics
+    // Load the flag
+    bool use_tf_lookup = true;
+    nh_.param("use_tf_lookup", use_tf_lookup, true);  // default to true
+
     if (nh_.getParam("camera_config/cameras", camera_list) && camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
         for (int i = 0; i < camera_list.size(); ++i) {
             if (camera_list[i].getType() != XmlRpc::XmlRpcValue::TypeStruct) continue;
@@ -51,47 +55,83 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
             std::string topic = static_cast<std::string>(camera_list[i]["topic"]);
             std::string frame_id = static_cast<std::string>(camera_list[i]["frame"]);
 
-            camera_infos_.emplace_back(CameraInfo{name, topic, frame_id, Eigen::Vector3d::Zero()});
+            Eigen::Vector3d transform(0.0, 0.0, 0.0);
+
+            if (!use_tf_lookup) {
+                std::vector<double> tf;
+                try {
+                    if (camera_list[i]["transform"].getType() != XmlRpc::XmlRpcValue::TypeArray) {
+                        ROS_ERROR_STREAM("Camera " << name << " 'transform' is not a list.");
+                        continue;
+                    }
+
+                    XmlRpc::XmlRpcValue tf_list = camera_list[i]["transform"];
+                    for (int j = 0; j < tf_list.size(); ++j) {
+                        if (tf_list[j].getType() == XmlRpc::XmlRpcValue::TypeInt)
+                            tf.push_back(static_cast<int>(tf_list[j]));
+                        else if (tf_list[j].getType() == XmlRpc::XmlRpcValue::TypeDouble)
+                            tf.push_back(static_cast<double>(tf_list[j]));
+                        else {
+                            ROS_WARN_STREAM("Invalid value type in 'transform'[" << j << "]");
+                            tf.push_back(0.0);
+                        }
+                    }
+
+                    if (tf.size() != 3) {
+                        ROS_ERROR_STREAM("Camera " << name << " 'transform' should have 3 values, got " << tf.size());
+                        continue;
+                    }
+                    transform = Eigen::Vector3d(tf[0], tf[1], tf[2]);
+
+                } catch (const XmlRpc::XmlRpcException& e) {
+                    ROS_FATAL_STREAM("Failed to parse camera[" << i << "] transform: " << e.getMessage());
+                    ros::shutdown();
+                    return;
+                }
+            }
+
+            camera_infos_.emplace_back(CameraInfo{name, topic, frame_id, transform});
         }
     } else {
         ROS_WARN("Failed to load camera_config/cameras or invalid format.");
     }
 
     // Wait for static transforms using frame_id
-    for (auto& cam : camera_infos_) {
-        tf2::Transform tf;
-        const int max_attempts = 20;
-        const ros::Duration retry_interval(0.5);
-        bool success = false;
+    if (use_tf_lookup) {
+        for (auto& cam : camera_infos_) {
+            tf2::Transform tf;
+            const int max_attempts = 20;
+            const ros::Duration retry_interval(0.5);
+            bool success = false;
 
-        for (int attempt = 0; attempt < max_attempts; ++attempt) {
-            if (getStaticTransform(robot_frame, cam.frame_id, tf)) {
-                double x = tf.getOrigin().x();
-                double y = tf.getOrigin().y();
-                double yaw = tf.getRotation().getAngle();
-                tf2::Vector3 axis = tf.getRotation().getAxis();
-                if (axis.z() < 0) yaw = -yaw;
+            for (int attempt = 0; attempt < max_attempts; ++attempt) {
+                if (getStaticTransform(robot_frame, cam.frame_id, tf)) {
+                    double x = tf.getOrigin().x();
+                    double y = tf.getOrigin().y();
+                    double yaw = tf.getRotation().getAngle();
+                    tf2::Vector3 axis = tf.getRotation().getAxis();
+                    if (axis.z() < 0) yaw = -yaw;
 
-                cam.transform = Eigen::Vector3d(x, y, yaw);
-                ROS_INFO("Static TF loaded for camera [%s] (%s): (%.2f, %.2f, %.2f rad)",
-                        cam.name.c_str(), cam.frame_id.c_str(), x, y, yaw);
-                success = true;
-                break;
-            } else {
-                ROS_WARN("Waiting for static TF from %s to %s... (attempt %d)",
-                        robot_frame.c_str(), cam.frame_id.c_str(), attempt + 1);
-                retry_interval.sleep();
+                    cam.transform = Eigen::Vector3d(x, y, yaw);
+                    ROS_INFO("TF loaded for [%s] (%s): (%.2f, %.2f, %.2f rad)",
+                            cam.name.c_str(), cam.frame_id.c_str(), x, y, yaw);
+                    success = true;
+                    break;
+                } else {
+                    ROS_WARN("Waiting for static TF from %s to %s... (attempt %d)",
+                            robot_frame.c_str(), cam.frame_id.c_str(), attempt + 1);
+                    retry_interval.sleep();
+                }
+            }
+
+            if (!success) {
+                ROS_ERROR("Failed to get static transform for camera %s (%s). Shutting down.",
+                        cam.name.c_str(), cam.frame_id.c_str());
+                ros::shutdown();
+                return;
             }
         }
-
-        if (!success) {
-            ROS_ERROR("Failed to get static transform for camera %s (%s). Shutting down.",
-                    cam.name.c_str(), cam.frame_id.c_str());
-            ros::shutdown();
-            return;
-        }
     }
-
 
     // Initialize noise models
     odometryNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << odometry_noise[0], odometry_noise[1], odometry_noise[2]).finished());

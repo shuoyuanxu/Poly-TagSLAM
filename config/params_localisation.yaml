@@ -1,11 +1,10 @@
 odom_topic: "robot/dlo/odom_node/odom"
-odom_frame: "robot/odom"
-robot_frame: "robot/base_link"
+odom_frame: "odom"
+robot_frame: "base_link"
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
 pathtosavelandmarkcsv: "config/landmark.csv"
 pathtoloadlandmarkcsv: "config/afteroptimisation.csv"
-ud_frame: "robot/base_link"
 savetaglocation: false
 usepriortagtable: true
 batch_optimisation: true
@@ -78,14 +77,27 @@ smoothingStartIndex_: 20 # give it 20s to initilise before smoother kicks in
 smoothingwindow: 5
 
 # Camera configuration
+# camera_config:
+#   cameras:
+#     - name: lCam
+#       topic: "/l/tag_detections"
+#       frame: "usb_cam_l"
+#     - name: rCam
+#       topic: "/r/tag_detections"
+#       frame: "usb_cam_r"
+#     - name: mCam
+#       topic: "/m/tag_detections"
+#       frame: "usb_cam_m"
+
+use_tf_lookup: false
+
 camera_config:
   cameras:
-    - name: lCam
-      topic: "/l/tag_detections"
-      frame: "usb_cam_l"
-    - name: rCam
-      topic: "/r/tag_detections"
-      frame: "usb_cam_r"
-    - name: mCam
-      topic: "/m/tag_detections"
-      frame: "usb_cam_m"
+    - name: picam1
+      topic: "/antobot/picam1/tag_detections"
+      frame: "picam1"
+      transform: [0, 0, 0.39]
+    - name: picam2
+      topic: "/antobot/picam2/tag_detections"
+      frame: "picam2"
+      transform: [0, 0, -0.39]
