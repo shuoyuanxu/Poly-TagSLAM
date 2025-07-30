@@ -1,6 +1,8 @@
 odom_topic: "robot/dlo/odom_node/odom"
-odom_frame: "odom"
-robot_frame: "base_link"
+odom_frame: "robot/odom"  # lboro data
+robot_frame: "robot/base_link"  # lboro data
+# odom_frame: "odom"  # antobot data
+# robot_frame: "base_link"  # antobot data
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
 pathtosavelandmarkcsv: "config/landmark.csv"
@@ -28,7 +30,7 @@ historyKeyframeSearchNum: 40 # loopclosure only checking historyKeyframeSearchNu
 requiredReobservedLandmarks: 3 
 
 # Stationary threshold
-stationary_position_threshold: 0.05 # 5cm
+stationary_position_threshold: 0.05 # 5cm // direction of camera's optical axis in 2D
 stationary_rotation_threshold: 0.1 # 0.1radius
 
 # Keyframe info, no need to use it if in isam2 mode
@@ -77,30 +79,26 @@ smoothingStartIndex_: 20 # give it 20s to initilise before smoother kicks in
 smoothingwindow: 5
 
 # Camera configuration
-# camera_config:
-#   cameras:
-#     - name: lCam
-#       topic: "/l/tag_detections"
-#       frame: "usb_cam_l"
-#       transform: [0, 0, 1.57079632679]
-#     - name: rCam
-#       topic: "/r/tag_detections"
-#       transform: [0, 0, -1.57079632679]
-#       frame: "usb_cam_r"
-#     - name: mCam
-#       topic: "/m/tag_detections"
-#       transform: [0.0, 0.0, 0.0]
-#       frame: "usb_cam_m"
-
-use_tf_lookup: false
-
 camera_config:
   cameras:
-    - name: picam1
-      topic: "/antobot/picam1/tag_detections"
-      frame: "picam1"
-      transform: [0, 0, 0.39]
-    - name: picam2
-      topic: "/antobot/picam2/tag_detections"
-      frame: "picam2"
-      transform: [0, 0, -0.39]
+    - name: lCam
+      topic: "/l/tag_detections"
+      frame: "usb_cam_l"
+    - name: rCam
+      topic: "/r/tag_detections"
+      frame: "usb_cam_r"
+    - name: mCam
+      topic: "/m/tag_detections"
+      frame: "usb_cam_m"
+
+
+# camera_config:
+#   cameras:
+#     - name: picam1
+#       topic: "/antobot/picam1/tag_detections"
+#       frame: "picam1"
+#       transform: [0, 0, 0.39]
+#     - name: picam2
+#       topic: "/antobot/picam2/tag_detections"
+#       frame: "picam2"
+#       transform: [0, 0, -0.39]

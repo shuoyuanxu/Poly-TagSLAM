@@ -1,5 +1,6 @@
 odom_topic: "robot/dlo/odom_node/odom"
-robot_frame: "robot/base_link"
+robot_frame: "robot/base_link"  # lboro data
+# robot_frame: "base_link"  # antobot data
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
 pathtosavelandmarkcsv: "config/afteroptimisation.csv"
@@ -34,8 +35,6 @@ noise_models:
     - 0.01
     - 0.01
 
-use_tf_lookup: false
-
 # Camera configuration
 camera_config:
   cameras:
@@ -52,3 +51,13 @@ camera_config:
       transform: [0.0, 0.0, 0.0]
       frame: "usb_cam_m"
 
+# camera_config:
+#   cameras:
+#     - name: picam1
+#       topic: "/antobot/picam1/tag_detections"
+#       frame: "picam1"
+#       transform: [0, 0, 0.39]
+#     - name: picam2
+#       topic: "/antobot/picam2/tag_detections"
+#       frame: "picam2"
+#       transform: [0, 0, -0.39]

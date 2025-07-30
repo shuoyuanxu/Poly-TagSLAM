@@ -89,10 +89,6 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
 
 
     // Load camera topics
-    // Load the flag
-    bool use_tf_lookup = true;
-    nh_.param("use_tf_lookup", use_tf_lookup, true);  // default to true
-
     if (nh_.getParam("camera_config/cameras", camera_list) && camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
         for (int i = 0; i < camera_list.size(); ++i) {
             if (camera_list[i].getType() != XmlRpc::XmlRpcValue::TypeStruct) continue;
@@ -103,39 +99,6 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
 
             Eigen::Vector3d transform(0.0, 0.0, 0.0);
 
-            if (!use_tf_lookup) {
-                std::vector<double> tf;
-                try {
-                    if (camera_list[i]["transform"].getType() != XmlRpc::XmlRpcValue::TypeArray) {
-                        ROS_ERROR_STREAM("Camera " << name << " 'transform' is not a list.");
-                        continue;
-                    }
-
-                    XmlRpc::XmlRpcValue tf_list = camera_list[i]["transform"];
-                    for (int j = 0; j < tf_list.size(); ++j) {
-                        if (tf_list[j].getType() == XmlRpc::XmlRpcValue::TypeInt)
-                            tf.push_back(static_cast<int>(tf_list[j]));
-                        else if (tf_list[j].getType() == XmlRpc::XmlRpcValue::TypeDouble)
-                            tf.push_back(static_cast<double>(tf_list[j]));
-                        else {
-                            ROS_WARN_STREAM("Invalid value type in 'transform'[" << j << "]");
-                            tf.push_back(0.0);
-                        }
-                    }
-
-                    if (tf.size() != 3) {
-                        ROS_ERROR_STREAM("Camera " << name << " 'transform' should have 3 values, got " << tf.size());
-                        continue;
-                    }
-                    transform = Eigen::Vector3d(tf[0], tf[1], tf[2]);
-
-                } catch (const XmlRpc::XmlRpcException& e) {
-                    ROS_FATAL_STREAM("Failed to parse camera[" << i << "] transform: " << e.getMessage());
-                    ros::shutdown();
-                    return;
-                }
-            }
-
             camera_infos_.emplace_back(CameraInfo{name, topic, frame_id, transform});
         }
     } else {
@@ -143,42 +106,49 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     }
 
     // Wait for static transforms using frame_id
-    if (use_tf_lookup) {
-        for (auto& cam : camera_infos_) {
-            tf2::Transform tf;
-            const int max_attempts = 20;
-            const ros::Duration retry_interval(0.5);
-            bool success = false;
+    for (auto& cam : camera_infos_) {
+        tf2::Transform tf;
+        const int max_attempts = 20;
+        const ros::Duration retry_interval(0.5);
+        bool success = false;
 
-            for (int attempt = 0; attempt < max_attempts; ++attempt) {
-                if (getStaticTransform(robot_frame, cam.frame_id, tf)) {
-                    double x = tf.getOrigin().x();
-                    double y = tf.getOrigin().y();
-                    double yaw = tf.getRotation().getAngle();
-                    tf2::Vector3 axis = tf.getRotation().getAxis();
-                    if (axis.z() < 0) yaw = -yaw;
+        for (int attempt = 0; attempt < max_attempts; ++attempt) {
+            if (getStaticTransform(robot_frame, cam.frame_id, tf)) {
+                
+                tf2::Vector3 trans = tf.getOrigin();
+                tf2::Quaternion rot = tf.getRotation();
 
-                    cam.transform = Eigen::Vector3d(x, y, yaw);
-                    ROS_INFO("TF loaded for [%s] (%s): (%.2f, %.2f, %.2f rad)",
-                            cam.name.c_str(), cam.frame_id.c_str(), x, y, yaw);
-                    success = true;
-                    break;
-                } else {
-                    ROS_WARN("Waiting for static TF from %s to %s... (attempt %d)",
-                            robot_frame.c_str(), cam.frame_id.c_str(), attempt + 1);
-                    retry_interval.sleep();
-                }
-            }
+                // Convert to Eigen
+                Eigen::Vector3d tf_trans(trans.x(), trans.y(), trans.z());
+                Eigen::Quaterniond tf_rot(rot.w(), rot.x(), rot.y(), rot.z());
+                Eigen::Matrix3d R = tf_rot.toRotationMatrix();
 
-            if (!success) {
-                ROS_ERROR("Failed to get static transform for camera %s (%s). Shutting down.",
-                        cam.name.c_str(), cam.frame_id.c_str());
-                ros::shutdown();
-                return;
+                Eigen::Vector3d z_axis_robot = R.col(2); 
+                z_axis_robot.z() = 0.0;  
+                z_axis_robot.normalize();  
+                double yaw = std::atan2(z_axis_robot.y(), z_axis_robot.x()); 
+
+                // Final transform
+                cam.transform = Eigen::Vector3d(tf_trans.x(), tf_trans.y(), yaw);
+                ROS_INFO("TF loaded for [%s] (%s): (%.2f, %.2f, %.2f rad)",
+                        cam.name.c_str(), cam.frame_id.c_str(), tf_trans.x(), tf_trans.y(), yaw);
+                success = true;
+                break;
+            } else {
+                ROS_WARN("Waiting for static TF from %s to %s... (attempt %d)",
+                        robot_frame.c_str(), cam.frame_id.c_str(), attempt + 1);
+                retry_interval.sleep();
             }
         }
-    }
 
+        if (!success) {
+            ROS_ERROR("Failed to get static transform for camera %s (%s). Shutting down.",
+                    cam.name.c_str(), cam.frame_id.c_str());
+            ros::shutdown();
+            return;
+        }
+    }
+ 
     // Load outlier removal conditons
     nh_.getParam("useoutlierremoval", useoutlierremoval); 
     nh_.getParam("jumpCombinedThreshold", jumpCombinedThreshold); 
