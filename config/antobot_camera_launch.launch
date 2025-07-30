@@ -5,7 +5,7 @@
   <!-- ##### Launch the pi cam to publish images and camera info ##### -->
   <node name="antopicam" pkg="antobot_picam" type="antopicam_publish_two.py" output="screen" />
 
-
+https://www.bilibili.com/video/BV1je8RzCEbc/?vd_source=bb72307c76d4aa8feaa26bde1f062b25#reply269375108353
   <!-- ##### Launch the apriltag detector ##### -->
   <!-- set to value="gdbserver localhost:10000" for remote debugging -->
   <arg name="launch_prefix" default="" />
