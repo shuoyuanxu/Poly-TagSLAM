@@ -1,4 +1,4 @@
-# Tag aided localisation algorithm for robots operating in polytunnels
+# Poly-TagSLAM: Low-Cost Robot Localisation and Mapping in Polytunnels with Fiducial Markers
 
 ## Overview
 
@@ -27,7 +27,7 @@ Run it with this when dealing with recorded bag
    2. [Graph-Based SLAM](#2-graph-based-slam)
 4. [Key Functions and Code Structure](#4-key-functions-and-code-structure)
    1. [relPoseFG](#1-relposefg)
-   2. [AprilSlam Node Initialization](#2-aprilslam-node-initialization)
+   2. [Poly-TagSLAM Node Initialization](#2-aprilslam-node-initialization)
    3. [Optimization](#3-optimization)
    4. [Odometry Processing](#4-odometry-processing)
    5. [Calibration](#5-calibration)
@@ -176,7 +176,7 @@ gtsam::Pose2 relPoseFG(const gtsam::Pose2& lastPoseSE2, const gtsam::Pose2& Pose
 }
 ```
 
-### **2. AprilSlam Node Initialization**
+### **2. Poly-TagSLAM Node Initialization**
 
 In the constructor of `aprilslamcpp`, multiple parameters are read from ROS parameters to configure the system, such as:
 
