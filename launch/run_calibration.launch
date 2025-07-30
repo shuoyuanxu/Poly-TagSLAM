@@ -6,9 +6,9 @@
   <node name="aprilslamcpp" pkg="aprilslamcpp" type="aprilslamcpp_cal" output="screen">
   </node>
 
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find aprilslamcpp)/launch/Visulisation.rviz">
-  <param name="output" value="screen"/>
-  </node>
+  <!-- <node name="rviz" pkg="rviz" type="rviz" args="-d $(find aprilslamcpp)/launch/Visulisation.rviz"> -->
+  <!-- <param name="output" value="screen"/> -->
+  <!-- </node> -->
 
 </launch>
 

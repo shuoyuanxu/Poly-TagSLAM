@@ -1,0 +1,74 @@
+shuoyuan@shuoyuan-HP:~/catkin_slam_ws/src/aprilslamcpp$ ./versioncheck.sh 
+🔍 Checking critical library versions...
+🔹 ros-noetic-roscpp
+Package: ros-noetic-roscpp
+Version: 1.17.4-1focal.20250519.225343
+
+🔹 ros-noetic-roslib
+Package: ros-noetic-roslib
+Version: 1.15.10-1focal.20250426.230521
+
+🔹 ros-noetic-tf2-ros
+Package: ros-noetic-tf2-ros
+Version: 0.7.10-1focal.20250520.000336
+
+🔹 ros-noetic-tf2-geometry-msgs
+Package: ros-noetic-tf2-geometry-msgs
+Version: 0.7.10-1focal.20250520.001448
+
+🔹 ros-noetic-geometry-msgs
+Package: ros-noetic-geometry-msgs
+Version: 1.13.2-1focal.20250426.011953
+
+🔹 ros-noetic-visualization-msgs
+Package: ros-noetic-visualization-msgs
+Version: 1.13.2-1focal.20250426.012640
+
+🔹 ros-noetic-nav-msgs
+Package: ros-noetic-nav-msgs
+Version: 1.13.2-1focal.20250426.013359
+
+🔹 ros-noetic-xmlrpcpp
+Package: ros-noetic-xmlrpcpp
+Version: 1.17.4-1focal.20250519.224718
+
+🔹 libboost-all-dev
+Package: libboost-all-dev
+Version: 1.71.0.0ubuntu2
+
+🔹 libeigen3-dev
+Package: libeigen3-dev
+Version: 3.3.7-2
+
+🔹 libxmlrpcpp-dev
+Package: libxmlrpcpp-dev
+Version: 1.14.3+ds1-11ubuntu5
+
+🔹 libstdc++6
+Package: libstdc++6
+Version: 10.5.0-1ubuntu1~20.04
+
+📦 Checking apriltag_ros in /home/shuoyuan/catkin_slam_ws/src/apriltag_ros
+✅ apriltag_ros commit:
+94b3b843324f6b64edc6ca59f9729e9021308406
+📅 Commit date:
+Mon Mar 27 13:17:42 2023 -0400
+
+📦 Checking GTSAM in /home/shuoyuan/drivers/gtsam
+✅ GTSAM commit:
+aba056176e98b95c807fb37c107188110ec54be2
+📅 Commit date:
+Mon Jun 10 15:13:53 2024 -0700
+
+📦 Eigen version (from header macros)
+#define EIGEN_WORLD_VERSION 3
+#define EIGEN_MAJOR_VERSION 3
+#define EIGEN_MINOR_VERSION 7
+
+📦 GCC Version (C++ compiler):
+gcc (Ubuntu 9.4.0-1ubuntu1~20.04.2) 9.4.0
+
+📦 libstdc++6 version (underlies cmath, vector, algorithm, cxxabi.h):
+Package: libstdc++6
+Version: 10.5.0-1ubuntu1~20.04
+
