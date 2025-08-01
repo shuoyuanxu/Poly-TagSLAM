@@ -35,7 +35,7 @@ RUN git clone https://github.com/borglab/gtsam.git /opt/gtsam && \
 RUN mkdir -p /catkin_ws/src
 WORKDIR /catkin_ws/src
 
-# Clone your aprilslam
+# Clone aprilslam
 RUN git clone https://github.com/shuoyuanxu/Poly-TagSLAM.git aprilslamcpp
 
 # Clone apriltag_ros at specified commit
