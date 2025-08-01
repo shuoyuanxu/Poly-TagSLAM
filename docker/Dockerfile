@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     ros-noetic-std-msgs \
     ros-noetic-apriltag-ros \
     ros-noetic-pcl-ros \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
 # Install GTSAM from source
 RUN git clone https://github.com/borglab/gtsam.git /opt/gtsam && \
@@ -33,21 +33,26 @@ RUN git clone https://github.com/borglab/gtsam.git /opt/gtsam && \
 
 # Create and set up Catkin workspace
 RUN mkdir -p /catkin_ws/src
-WORKDIR /catkin_ws
-
-# Copy your full workspace in (excluding Docker itself)
-COPY ./ /catkin_ws/src/aprilslamcpp
-
-# Clone apriltag_ros at correct commit
 WORKDIR /catkin_ws/src
+
+# Clone your aprilslam
+RUN git clone https://github.com/shuoyuanxu/Poly-TagSLAM.git aprilslamcpp
+
+# Clone apriltag_ros at specified commit
 RUN git clone https://github.com/AprilRobotics/apriltag_ros.git && \
     cd apriltag_ros && \
     git checkout 94b3b843324f6b64edc6ca59f9729e9021308406
 
-# Build
+# Build the workspace
 WORKDIR /catkin_ws
 RUN /bin/bash -c "source /opt/ros/noetic/setup.bash && catkin_make"
 
-# Start with a shell and let user run roslaunch freely
-ENTRYPOINT ["/bin/bash"]
+# Source workspace automatically
+RUN echo "source /catkin_ws/devel/setup.bash" >> /root/.bashrc
+
+# Set runtime environment
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+# Start with a bash shell
+ENTRYPOINT ["/bin/bash"]
+
