@@ -18,7 +18,7 @@ useisam2: false # true for ISAM2, false for SAM
 
 # Particle initilisation condition 
 N_particles: 1000
-usePFinitialise: true
+usePFinitialise: false
 PFWaitTime: 5
 rngVar: 0.2
 brngVar: 0.1
@@ -39,12 +39,12 @@ distanceThreshold: 0.5
 rotationThreshold: 5
 
 # Outlier removal, dont use it when odometry is really bad!!!!!!
-useoutlierremoval: true
+useoutlierremoval: false
 jumpCombinedThreshold: 1
 outlierRemovalStartIndex_: 20 
 
 # Trajectory smooth
-usetrajsmoothing: true
+usetrajsmoothing: false
 smoothingStartIndex_: 20 
 smoothingwindow: 5
 
@@ -79,6 +79,7 @@ smoothingStartIndex_: 20 # give it 20s to initilise before smoother kicks in
 smoothingwindow: 5
 
 # Camera configuration
+# Camera configuration
 camera_config:
   cameras:
     - name: lCam
@@ -91,7 +92,6 @@ camera_config:
       topic: "/m/tag_detections"
       frame: "usb_cam_m"
 
-
 # camera_config:
 #   cameras:
 #     - name: picam1
@@ -102,3 +102,12 @@ camera_config:
 #       topic: "/antobot/picam2/tag_detections"
 #       frame: "picam2"
 #       transform: [0, 0, -0.39]
+
+# camera_config:
+#   cameras:
+#     - name: lCam
+#       topic: "/left/tag_detections"
+#       frame: "left_cam"
+#     - name: rCam
+#       topic: "/right/tag_detections"
+#       frame: "right_cam"
