@@ -10,27 +10,13 @@ double wrapToPi(double angle) {
     return angle - M_PI;
 }   
 
-// Computes the relative pose between two Pose2 objects
-gtsam::Pose2 relPoseFG(const gtsam::Pose2& lastPoseSE2, const gtsam::Pose2& PoseSE2) {
-    double dx = PoseSE2.x() - lastPoseSE2.x();
-    double dy = PoseSE2.y() - lastPoseSE2.y();
-    double dtheta = wrapToPi(PoseSE2.theta() - lastPoseSE2.theta());
-
-    // Compute the distance moved along the robot's forward direction
-    double distance = std::sqrt(dx * dx + dy * dy);
-    double direction = std::atan2(dy, dx);
-    // return gtsam::Pose2(distance, 0, dtheta);
-
-    // Adjust the distance based on the robot's heading to account for backward movement
-    double theta = lastPoseSE2.theta();
-    double dx_body = std::cos(theta) * dx + std::sin(theta) * dy;
-    double dy_body = -std::sin(theta) * dx + std::cos(theta) * dy;
-
-    // Return the relative pose assuming robot cant move sideways: dy = 0
-    return gtsam::Pose2(dx_body, dy_body, dtheta);
+gtsam::Pose3 relPoseFG(const gtsam::Pose3& lastPoseSE3, const gtsam::Pose3& PoseSE3) {
+    // Compute relative transformation in the global frame
+    gtsam::Pose3 relativePose = lastPoseSE3.between(PoseSE3);
+    return relativePose;
 } 
 
-void publishLandmarks(ros::Publisher& landmark_pub, const std::map<int, gtsam::Point2>& landmarks, const std::string& frame_id) {
+void publishLandmarks(ros::Publisher& landmark_pub, const std::map<int, gtsam::Point3>& landmarks, const std::string& frame_id) {
     visualization_msgs::MarkerArray markers;
     int id = 0;
     for (const auto& landmark : landmarks) {
@@ -44,7 +30,7 @@ void publishLandmarks(ros::Publisher& landmark_pub, const std::map<int, gtsam::P
         marker.action = visualization_msgs::Marker::ADD;
         marker.pose.position.x = landmark.second.x();
         marker.pose.position.y = landmark.second.y();
-        marker.pose.position.z = 0;  // Assuming the landmarks are on the ground plane
+        marker.pose.position.z = landmark.second.z();  
         marker.scale.x = 0.2;
         marker.scale.y = 0.2;
         marker.scale.z = 0.2;
@@ -65,7 +51,7 @@ void publishLandmarks(ros::Publisher& landmark_pub, const std::map<int, gtsam::P
         text_marker.action = visualization_msgs::Marker::ADD;
         text_marker.pose.position.x = landmark.second.x();
         text_marker.pose.position.y = landmark.second.y();
-        text_marker.pose.position.z = 0.5;
+        text_marker.pose.position.z = landmark.second.z() + 0.5;  
         text_marker.scale.z = 0.2;
         text_marker.text = std::to_string(landmark.first);
         text_marker.color.a = 1.0;
@@ -83,23 +69,26 @@ void publishPath(ros::Publisher& path_pub, const gtsam::Values& result, int max_
     nav_msgs::Path path;
     path.header.frame_id = frame_id;
     path.header.stamp = ros::Time::now();
-    path.poses.clear();  // Clear any existing poses
+    path.poses.clear();
 
     for (int i = 1; i <= max_index; i++) {
         gtsam::Symbol sym('X', i);
         if (result.exists(sym)) {
-            gtsam::Pose2 pose = result.at<gtsam::Pose2>(sym);
+            gtsam::Pose3 pose = result.at<gtsam::Pose3>(sym);  
 
             geometry_msgs::PoseStamped pose_msg;
             pose_msg.header.frame_id = frame_id;
             pose_msg.header.stamp = ros::Time::now();
-            pose_msg.pose.position.x = pose.x();
-            pose_msg.pose.position.y = pose.y();
-            pose_msg.pose.position.z = 0;  // Assuming 2D
+            pose_msg.pose.position.x = pose.translation().x();
+            pose_msg.pose.position.y = pose.translation().y();
+            pose_msg.pose.position.z = pose.translation().z();
 
-            tf2::Quaternion quat;
-            quat.setRPY(0, 0, pose.theta());
-            pose_msg.pose.orientation = tf2::toMsg(quat);
+            // Convert rotation to quaternion
+            gtsam::Quaternion gtsam_quat = pose.rotation().toQuaternion();
+            pose_msg.pose.orientation.w = gtsam_quat.w();
+            pose_msg.pose.orientation.x = gtsam_quat.x();
+            pose_msg.pose.orientation.y = gtsam_quat.y();
+            pose_msg.pose.orientation.z = gtsam_quat.z();
 
             path.poses.push_back(pose_msg);
         }
@@ -110,29 +99,33 @@ void publishPath(ros::Publisher& path_pub, const gtsam::Values& result, int max_
 
 void publishMapToOdomTF(tf2_ros::TransformBroadcaster& tf_broadcaster, 
                         const gtsam::Values& result, int latest_index, 
-                        const gtsam::Pose2& poseSE2, 
+                        const gtsam::Pose3& poseSE3,  
                         const std::string& map_frame, const std::string& odom_frame, const std::string& base_link_frame) {
-    // Define the symbol for the latest pose
     gtsam::Symbol sym('X', latest_index);
 
-    // Check if the latest pose exists in the result
     if (result.exists(sym)) {
         // Extract the pose from the SLAM result (map -> base_link)
-        gtsam::Pose2 slamPose = result.at<gtsam::Pose2>(sym);
+        gtsam::Pose3 slamPose = result.at<gtsam::Pose3>(sym);
 
         // Create the transform for map -> base_link
         tf2::Transform map_to_base_link;
-        tf2::Quaternion slam_quat;
-        slam_quat.setRPY(0, 0, slamPose.theta());  // Rotation around Z-axis
-        map_to_base_link.setOrigin(tf2::Vector3(slamPose.x(), slamPose.y(), 0)); // Translation
-        map_to_base_link.setRotation(slam_quat);
+        gtsam::Quaternion slam_quat = slamPose.rotation().toQuaternion();
+        tf2::Quaternion tf_slam_quat(slam_quat.x(), slam_quat.y(), slam_quat.z(), slam_quat.w());
+        map_to_base_link.setOrigin(tf2::Vector3(
+            slamPose.translation().x(), 
+            slamPose.translation().y(), 
+            slamPose.translation().z()));
+        map_to_base_link.setRotation(tf_slam_quat);
 
         // Convert odometry pose (odom -> base_link) into a transform
         tf2::Transform odom_to_base_link;
-        tf2::Quaternion odom_quat;
-        odom_quat.setRPY(0, 0, poseSE2.theta());  // Rotation around Z-axis
-        odom_to_base_link.setOrigin(tf2::Vector3(poseSE2.x(), poseSE2.y(), 0)); // Translation
-        odom_to_base_link.setRotation(odom_quat);
+        gtsam::Quaternion odom_quat = poseSE3.rotation().toQuaternion();
+        tf2::Quaternion tf_odom_quat(odom_quat.x(), odom_quat.y(), odom_quat.z(), odom_quat.w());
+        odom_to_base_link.setOrigin(tf2::Vector3(
+            poseSE3.translation().x(), 
+            poseSE3.translation().y(), 
+            poseSE3.translation().z()));
+        odom_to_base_link.setRotation(tf_odom_quat);
 
         // Compute the map -> odom transform
         tf2::Transform map_to_odom = map_to_base_link * odom_to_base_link.inverse();
@@ -140,18 +133,15 @@ void publishMapToOdomTF(tf2_ros::TransformBroadcaster& tf_broadcaster,
         // Publish the map -> odom transform
         geometry_msgs::TransformStamped transform_stamped;
         transform_stamped.header.stamp = ros::Time::now();
-        transform_stamped.header.frame_id = map_frame;  // map
-        transform_stamped.child_frame_id = odom_frame; // odom
+        transform_stamped.header.frame_id = map_frame;
+        transform_stamped.child_frame_id = odom_frame;
 
-        // Set translation
         transform_stamped.transform.translation.x = map_to_odom.getOrigin().x();
         transform_stamped.transform.translation.y = map_to_odom.getOrigin().y();
         transform_stamped.transform.translation.z = map_to_odom.getOrigin().z();
 
-        // Set rotation
         transform_stamped.transform.rotation = tf2::toMsg(map_to_odom.getRotation());
 
-        // Broadcast the transform
         tf_broadcaster.sendTransform(transform_stamped);
     }
 }
@@ -166,68 +156,71 @@ void publishRefinedOdom(ros::Publisher& odom_pub,
 {
     gtsam::Symbol sym('X', index_of_pose);
 
-    // Make sure the pose exists
     if (!Estimates_visulisation.exists(sym)) {
         ROS_WARN("publishRefinedOdom: Pose not found in Estimates_visulisation for X%d", index_of_pose);
         return;
     }
 
-    // 1) Retrieve the GTSAM pose (assuming it's odom->base_link)
-    gtsam::Pose2 refinedPose = Estimates_visulisation.at<gtsam::Pose2>(sym);
+    // Retrieve the GTSAM Pose3
+    gtsam::Pose3 refinedPose = Estimates_visulisation.at<gtsam::Pose3>(sym);
 
-    // 2) Convert to quaternion
-    tf2::Quaternion quat;
-    quat.setRPY(0.0, 0.0, refinedPose.theta());
+    // Convert to quaternion
+    gtsam::Quaternion gtsam_quat = refinedPose.rotation().toQuaternion();
 
-    // 3) Fill nav_msgs::Odometry
+    // Fill nav_msgs::Odometry
     nav_msgs::Odometry odom_msg;
     odom_msg.header.stamp = stamp;
-    odom_msg.header.frame_id = odom_frame;       // e.g. "odom"
-    odom_msg.child_frame_id  = base_link_frame;  // e.g. "base_link"
+    odom_msg.header.frame_id = odom_frame;
+    odom_msg.child_frame_id  = base_link_frame;
 
     // Position
-    odom_msg.pose.pose.position.x = refinedPose.x();
-    odom_msg.pose.pose.position.y = refinedPose.y();
-    odom_msg.pose.pose.position.z = 0.0;
+    odom_msg.pose.pose.position.x = refinedPose.translation().x();
+    odom_msg.pose.pose.position.y = refinedPose.translation().y();
+    odom_msg.pose.pose.position.z = refinedPose.translation().z();
 
     // Orientation
-    odom_msg.pose.pose.orientation = tf2::toMsg(quat);
+    odom_msg.pose.pose.orientation.w = gtsam_quat.w();
+    odom_msg.pose.pose.orientation.x = gtsam_quat.x();
+    odom_msg.pose.pose.orientation.y = gtsam_quat.y();
+    odom_msg.pose.pose.orientation.z = gtsam_quat.z();
 
-    // 4) Publish
     odom_pub.publish(odom_msg);
 
-    // 5) Save to a csv
+    // Save to CSV with roll, pitch, yaw
     double time = stamp.toSec();
     refined_odom_csv << std::fixed << std::setprecision(6)
                     << time << ","
-                    << refinedPose.x() << ","
-                    << refinedPose.y() << ","
-                    << refinedPose.theta() << std::endl;
-
+                    << refinedPose.translation().x() << ","
+                    << refinedPose.translation().y() << ","
+                    << refinedPose.translation().z() << ","
+                    << refinedPose.rotation().roll() << ","
+                    << refinedPose.rotation().pitch() << ","
+                    << refinedPose.rotation().yaw() << std::endl;
 }
 
-void saveLandmarksToCSV(const std::map<int, gtsam::Point2>& landmarks, const std::string& filename) {
+void saveLandmarksToCSV(const std::map<int, gtsam::Point3>& landmarks, const std::string& filename) {
     std::ofstream file;
-    file.open(filename, std::ios::out); // Open file in write mode
+    file.open(filename, std::ios::out);
 
     if (!file) {
         std::cerr << "Failed to open the file!" << std::endl;
         return;
     }
-    // Write the header line
-    file << "id,x,y\n";
+    
+    // Write the header line with z coordinate
+    file << "id,x,y,z\n";
     
     for (const auto& landmark : landmarks) {
         int id = landmark.first;
-        gtsam::Point2 point = landmark.second;
-        file << id << "," << point.x() << "," << point.y() << "\n";
+        gtsam::Point3 point = landmark.second;
+        file << id << "," << point.x() << "," << point.y() << "," << point.z() << "\n";
     }
 
     file.close();
 }
 
-std::map<int, gtsam::Point2> loadLandmarksFromCSV(const std::string& filename) {
-    std::map<int, gtsam::Point2> landmarks;
+std::map<int, gtsam::Point3> loadLandmarksFromCSV(const std::string& filename) {
+    std::map<int, gtsam::Point3> landmarks;
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Failed to open the file!" << std::endl;
@@ -238,19 +231,22 @@ std::map<int, gtsam::Point2> loadLandmarksFromCSV(const std::string& filename) {
 
     // Skip the header line
     if (std::getline(file, line)) {
-        // You can print or log the header if needed
-        // std::cout << "Header: " << line << std::endl;
+        // Header line skipped
     }
 
     while (std::getline(file, line)) {
         std::istringstream ss(line);
-        std::string id_str, x_str, y_str;
-        if (std::getline(ss, id_str, ',') && std::getline(ss, x_str, ',') && std::getline(ss, y_str, ',')) {
+        std::string id_str, x_str, y_str, z_str;
+        if (std::getline(ss, id_str, ',') && 
+            std::getline(ss, x_str, ',') && 
+            std::getline(ss, y_str, ',') &&
+            std::getline(ss, z_str, ',')) {
             try {
                 int id = std::stoi(id_str);
                 double x = std::stod(x_str);
                 double y = std::stod(y_str);
-                landmarks[id] = gtsam::Point2(x, y);
+                double z = std::stod(z_str);
+                landmarks[id] = gtsam::Point3(x, y, z);
             } catch (const std::exception& e) {
                 std::cerr << "Error parsing line: " << line << " - " << e.what() << std::endl;
             }
@@ -261,31 +257,39 @@ std::map<int, gtsam::Point2> loadLandmarksFromCSV(const std::string& filename) {
     return landmarks;
 }
 
-// funtion for computing tag locations from coordinate transformation
 void processDetections(const apriltag_ros::AprilTagDetectionArray::ConstPtr& cam_msg, 
-                       const Eigen::Vector3d& xyTrans_cam_baselink,
+                       const gtsam::Pose3& pose_cam_baselink,  // Now full Pose3
                        std::vector<int>& Ids, 
-                       std::vector<Eigen::Vector2d>& tagPoss) {
+                       std::vector<Eigen::Vector3d>& tagPoss) {  // Now 3D
     if (cam_msg) {
         for (const auto& detection : cam_msg->detections) {
             Ids.push_back(detection.id[0]);
-            double rotTheta = xyTrans_cam_baselink(2);
-            Eigen::Matrix2d R;
-            R << cos(rotTheta), -sin(rotTheta),
-                 sin(rotTheta),  cos(rotTheta);
-            Eigen::Vector2d rotP = R * Eigen::Vector2d(detection.pose.pose.pose.position.z, -detection.pose.pose.pose.position.x);
-            tagPoss.push_back(rotP + xyTrans_cam_baselink.head<2>());
+            
+            // Get detection position in camera frame
+            // AprilTag detection: x is right, y is down, z is forward
+            gtsam::Point3 tag_in_camera(
+                detection.pose.pose.pose.position.x,
+                detection.pose.pose.pose.position.y,
+                detection.pose.pose.pose.position.z
+            );
+            
+            // Transform to base_link frame
+            gtsam::Point3 tag_in_baselink = pose_cam_baselink.transformFrom(tag_in_camera);
+            
+            // Store as Eigen::Vector3d
+            Eigen::Vector3d tagPos;
+            tagPos << tag_in_baselink.x(), tag_in_baselink.y(), tag_in_baselink.z();
+            tagPoss.push_back(tagPos);
         }
     }
 }
 
-// funtion for processing tag detection topics into IDs and TagPoss
-std::pair<std::vector<int>, std::vector<Eigen::Vector2d>> getCamDetections(
+std::pair<std::vector<int>, std::vector<Eigen::Vector3d>> getCamDetections(
     const std::vector<CameraInfo>& camera_infos,
     const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections) {
 
     std::vector<int> Ids;
-    std::vector<Eigen::Vector2d> tagPoss;
+    std::vector<Eigen::Vector3d> tagPoss;
 
     for (const auto& cam : camera_infos) {
         auto it = camera_detections.find(cam.name);
@@ -293,13 +297,16 @@ std::pair<std::vector<int>, std::vector<Eigen::Vector2d>> getCamDetections(
             continue;
         }
 
-        // This calls the original processDetections with the correct transformation
         processDetections(it->second, cam.transform, Ids, tagPoss);
     }
     return std::make_pair(Ids, tagPoss);
 }
 
-void visualizeLoopClosure(ros::Publisher& lc_pub, const gtsam::Pose2& currentPose, const gtsam::Pose2& keyframePose, int currentPoseIndex, const std::string& frame_id) {
+void visualizeLoopClosure(ros::Publisher& lc_pub, 
+                         const gtsam::Pose3& currentPose, 
+                         const gtsam::Pose3& keyframePose, 
+                         int currentPoseIndex, 
+                         const std::string& frame_id) {
     visualization_msgs::Marker line_marker;
     line_marker.header.frame_id = frame_id;
     line_marker.header.stamp = ros::Time::now();
@@ -308,69 +315,65 @@ void visualizeLoopClosure(ros::Publisher& lc_pub, const gtsam::Pose2& currentPos
     line_marker.type = visualization_msgs::Marker::LINE_STRIP;
     line_marker.action = visualization_msgs::Marker::ADD;
 
-    // Set the color to green
     line_marker.color.r = 0.0;
     line_marker.color.g = 1.0;
     line_marker.color.b = 0.0;
     line_marker.color.a = 1.0;
 
-    // Set line thickness
     line_marker.scale.x = 0.05;
 
-    // Add points to the marker for the keyframe and current pose
     geometry_msgs::Point p1, p2;
-    p1.x = keyframePose.x();
-    p1.y = keyframePose.y();
-    p1.z = 0;
+    p1.x = keyframePose.translation().x();
+    p1.y = keyframePose.translation().y();
+    p1.z = keyframePose.translation().z();
 
-    p2.x = currentPose.x();
-    p2.y = currentPose.y();
-    p2.z = 0;
+    p2.x = currentPose.translation().x();
+    p2.y = currentPose.translation().y();
+    p2.z = currentPose.translation().z();
 
     line_marker.points.push_back(p1);
     line_marker.points.push_back(p2);
 
-    // Publish the line marker
     lc_pub.publish(line_marker);
 }
 
-// Particle filter as position initialisation function
-std::vector<Eigen::Vector3d> particleFilter(
+std::vector<Eigen::Matrix<double, 6, 1>> particleFilter(
         const std::vector<int>& Id,
-        const std::vector<Eigen::Vector2d>& tagPos,
-        const std::map<int, gtsam::Point2>& savedLandmarks,
-        std::vector<Eigen::Vector3d>& x_P,
+        const std::vector<Eigen::Vector3d>& tagPos,
+        const std::map<int, gtsam::Point3>& savedLandmarks,
+        std::vector<Eigen::Matrix<double, 6, 1>>& x_P,
         int N,
         double rngVar,
         double brngVar) {
 
     int numLandmarks_detected = (int)Id.size();
 
-    // z: each landmark measurement as [range, bearing]
-    std::vector<Eigen::Vector2d> z(numLandmarks_detected);
+    // z: each landmark measurement as [bearing, elevation, range]
+    std::vector<Eigen::Vector3d> z(numLandmarks_detected);
 
     // Preprocess measurements
-    // Original logic: range = atan2(y, x), bearing = sqrt(x² + y²)
     for (int n = 0; n < numLandmarks_detected; ++n) {
-        Eigen::Vector2d landSE2 = tagPos[n];
-        double range = std::atan2(landSE2(1), landSE2(0));
-        double brng = std::sqrt(landSE2(0)*landSE2(0) + landSE2(1)*landSE2(1));
-        z[n](0) = range;
-        z[n](1) = brng;
+        Eigen::Vector3d landSE3 = tagPos[n];
+        double range = landSE3.norm();
+        double bearing = std::atan2(landSE3(1), landSE3(0));
+        double elevation = std::atan2(landSE3(2), std::sqrt(landSE3(0)*landSE3(0) + landSE3(1)*landSE3(1)));
+        z[n](0) = bearing;
+        z[n](1) = elevation;
+        z[n](2) = range;
     }
 
-    // Extract landmark positions (egoPos)
-    std::vector<Eigen::Vector2d> egoPos(numLandmarks_detected);
+    // Extract landmark positions
+    std::vector<Eigen::Vector3d> egoPos(numLandmarks_detected);
     for (int n = 0; n < numLandmarks_detected; ++n) {
         int tag_number_detected = Id[n];
         auto it = savedLandmarks.find(tag_number_detected);
         if (it != savedLandmarks.end()) {
-            const gtsam::Point2& Lpos = it->second;
+            const gtsam::Point3& Lpos = it->second;
             egoPos[n](0) = Lpos.x();
             egoPos[n](1) = Lpos.y();
+            egoPos[n](2) = Lpos.z();
         } else {
-            egoPos[n](0) = std::numeric_limits<double>::quiet_NaN();
-            egoPos[n](1) = std::numeric_limits<double>::quiet_NaN();
+            egoPos[n].setConstant(std::numeric_limits<double>::quiet_NaN());
         }
     }
 
@@ -381,49 +384,58 @@ std::vector<Eigen::Vector3d> particleFilter(
     std::uniform_real_distribution<double> ud(0.0, 1.0);
 
     // Temporary updates and weights
-    std::vector<Eigen::Vector3d> x_P_update(N);
+    std::vector<Eigen::Matrix<double, 6, 1>> x_P_update(N);
     std::vector<double> P_w(N);
 
     // Particle Filter Update
     for (int i = 0; i < N; ++i) {
-        // State prediction
-        Eigen::Matrix3d A = Eigen::Matrix3d::Identity();
-        Eigen::Matrix3d Q = Eigen::Matrix3d::Zero();
-        Q(0,0) = 1.0;
-        Q(1,1) = 1.0;
-        Q(2,2) = 0.4;
+        // State prediction with 6DOF
+        Eigen::Matrix<double, 6, 6> A = Eigen::Matrix<double, 6, 6>::Identity();
+        Eigen::Matrix<double, 6, 6> Q = Eigen::Matrix<double, 6, 6>::Zero();
+        Q(0,0) = 1.0;  // x
+        Q(1,1) = 1.0;  // y
+        Q(2,2) = 1.0;  // z
+        Q(3,3) = 0.4;  // roll
+        Q(4,4) = 0.4;  // pitch
+        Q(5,5) = 0.4;  // yaw
 
-        Eigen::Vector3d noise(nd(gen), nd(gen), nd(gen));
-        Eigen::Vector3d xplus = A * x_P[i] + Q * noise;
-        xplus(2) = wrapToPi(xplus(2));
+        Eigen::Matrix<double, 6, 1> noise;
+        for (int j = 0; j < 6; ++j) noise(j) = nd(gen);
+        
+        Eigen::Matrix<double, 6, 1> xplus = A * x_P[i] + Q * noise;
+        
+        // Wrap angles
+        xplus(3) = wrapToPi(xplus(3));  // roll
+        xplus(4) = wrapToPi(xplus(4));  // pitch
+        xplus(5) = wrapToPi(xplus(5));  // yaw
+        
         x_P_update[i] = xplus;
 
         // Measurement update
         double weight = 0.0;
         for (int l = 0; l < numLandmarks_detected; ++l) {
-            if (std::isnan(egoPos[l](0)) || std::isnan(egoPos[l](1))) {
-                // Landmark unknown, skip
-                continue;
-            }
+            if (std::isnan(egoPos[l](0))) continue;
 
-            Eigen::Vector2d targetPos = xplus.head<2>();
-            Eigen::Vector2d error = egoPos[l] - targetPos;
+            Eigen::Vector3d targetPos = xplus.head<3>();
+            Eigen::Vector3d error = egoPos[l] - targetPos;
             double range_pred = error.norm();
-            double bearing_pred = std::atan2(error(1), error(0)) - xplus(2);
-            bearing_pred = std::atan2(std::sin(bearing_pred), std::cos(bearing_pred));
+            double bearing_pred = std::atan2(error(1), error(0)) - xplus(5);  // relative to yaw
+            double elevation_pred = std::atan2(error(2), std::sqrt(error(0)*error(0) + error(1)*error(1)));
+            
+            bearing_pred = wrapToPi(bearing_pred);
 
-            double bearingError = z[l](1) - bearing_pred;
-            if (bearingError < -M_PI) bearingError += 2*M_PI;
-            else if (bearingError > M_PI) bearingError -= 2*M_PI;
-
-            double rangeError = range_pred - z[l](0);
+            double bearingError = wrapToPi(z[l](0) - bearing_pred);
+            double elevationError = wrapToPi(z[l](1) - elevation_pred);
+            double rangeError = range_pred - z[l](2);
+            
             double sr = std::sqrt(rngVar);
             double sb = std::sqrt(brngVar);
 
             double rl = std::exp(-0.5 * std::pow(rangeError/sr,2)) / (sr * std::sqrt(2*M_PI));
             double bl = std::exp(-0.5 * std::pow(bearingError/sb,2)) / (sb * std::sqrt(2*M_PI));
+            double el = std::exp(-0.5 * std::pow(elevationError/sb,2)) / (sb * std::sqrt(2*M_PI));
 
-            weight += (rl * bl);
+            weight += (rl * bl * el);
         }
         P_w[i] = weight;
     }
@@ -447,7 +459,7 @@ std::vector<Eigen::Vector3d> particleFilter(
         cumsum[i] = cumsum[i-1] + P_w[i];
     }
 
-    std::vector<Eigen::Vector3d> x_P_new(N);
+    std::vector<Eigen::Matrix<double, 6, 1>> x_P_new(N);
     for (int i = 0; i < N; ++i) {
         double r = ud(gen);
         auto it = std::lower_bound(cumsum.begin(), cumsum.end(), r);
@@ -456,20 +468,17 @@ std::vector<Eigen::Vector3d> particleFilter(
         x_P_new[i] = x_P_update[idx];
     }
 
-    // x_est calculation removed since it caused reference issues and wasn't in snippet
-    // If needed, compute x_est here by averaging particles.
-
-    // Update x_P reference
     x_P = x_P_new;
-    return x_P_new; // return by value is safe since x_P_new is a local variable
+    return x_P_new;
 }
 
-std::vector<Eigen::Vector3d> initParticles(int Ninit) {
-    // Define grid boundaries
+std::vector<Eigen::Matrix<double, 6, 1>> initParticles(int Ninit) {
+    // Define grid boundaries for x, y, z
     double xmin = -3.0, xmax = 6.0;
     double ymin = -25.0, ymax = 145.0;
+    double zmin = 0.0, zmax = 2.0;  // Assuming robot stays near ground
 
-    // Compute grid dimensions
+    // Compute grid dimensions (simplified 2D grid for x,y)
     double ratio = (xmax - xmin) / (ymax - ymin);
     int Nx = static_cast<int>(std::round(ratio * std::sqrt(Ninit)));
     int Ny = static_cast<int>(std::round(double(Ninit) / Nx));
@@ -479,22 +488,25 @@ std::vector<Eigen::Vector3d> initParticles(int Ninit) {
     Eigen::VectorXd X_lin = Eigen::VectorXd::LinSpaced(Nx, xmin, xmax);
     Eigen::VectorXd Y_lin = Eigen::VectorXd::LinSpaced(Ny, ymin, ymax);
 
-    // Random orientation generator
+    // Random generators
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::normal_distribution<double> d_theta(0.0, M_PI);
+    std::uniform_real_distribution<double> d_z(zmin, zmax);
+    std::uniform_real_distribution<double> d_theta(-M_PI, M_PI);
 
-    // Prepare vector to store particles
-    std::vector<Eigen::Vector3d> particles;
+    // Prepare vector to store 6DOF particles
+    std::vector<Eigen::Matrix<double, 6, 1>> particles;
     particles.reserve(N);
 
     for (int i = 0; i < Ny; ++i) {
         for (int j = 0; j < Nx; ++j) {
-            Eigen::Vector3d particle;
-            particle(0) = X_lin(j);
-            particle(1) = Y_lin(i);
-            double new_theta = d_theta(gen);
-            particle(2) = wrapToPi(new_theta); // Assuming wrapToPi is defined
+            Eigen::Matrix<double, 6, 1> particle;
+            particle(0) = X_lin(j);      // x
+            particle(1) = Y_lin(i);      // y
+            particle(2) = d_z(gen);      // z
+            particle(3) = 0.0;           // roll (assuming mostly upright)
+            particle(4) = 0.0;           // pitch (assuming mostly upright)
+            particle(5) = d_theta(gen);  // yaw (random orientation)
 
             particles.push_back(particle);
         }
@@ -503,62 +515,69 @@ std::vector<Eigen::Vector3d> initParticles(int Ninit) {
     return particles;
 }
 
-std::vector<Eigen::Vector3d> initParticlesFromFirstTag(
+std::vector<Eigen::Matrix<double, 6, 1>> initParticlesFromFirstTag(
         const std::vector<int>& Id,
-        const std::vector<Eigen::Vector2d>& tagPos,
-        const std::map<int, gtsam::Point2>& savedLandmarks,
+        const std::vector<Eigen::Vector3d>& tagPos,  // Now 3D
+        const std::map<int, gtsam::Point3>& savedLandmarks,  // Now 3D
         int Ninit) {
 
-    // If no tags, return empty or handle as needed
     if (Id.empty()) {
-        return std::vector<Eigen::Vector3d>();
+        return std::vector<Eigen::Matrix<double, 6, 1>>();
     }
 
-    // Randomly pick a tag from the detected list
+    // Randomly pick a tag
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<int> dist_idx(0, (int)Id.size() - 1);
 
     int random_index = dist_idx(gen);
     int tag_id = Id[random_index];
-    Eigen::Vector2d landSE2 = tagPos[random_index];
+    Eigen::Vector3d landSE3 = tagPos[random_index];
 
-    // Attempt to find the chosen tag in the saved landmarks
     auto it = savedLandmarks.find(tag_id);
     if (it == savedLandmarks.end()) {
-        // If the tag isn't found in the landmark table, return empty or fallback to another strategy
-        return std::vector<Eigen::Vector3d>();
+        return std::vector<Eigen::Matrix<double, 6, 1>>();
     }
 
-    gtsam::Point2 tag_global = it->second;
+    gtsam::Point3 tag_global = it->second;
 
     // Compute range and bearing from measurement
-    double range = std::sqrt(landSE2(0)*landSE2(0) + landSE2(1)*landSE2(1));
-    double bearing = std::atan2(landSE2(1), landSE2(0));
+    double range = landSE3.norm();
+    double bearing = std::atan2(landSE3(1), landSE3(0));
+    double elevation = std::atan2(landSE3(2), std::sqrt(landSE3(0)*landSE3(0) + landSE3(1)*landSE3(1)));
 
-    // Estimate robot position:
-    double robot_x = tag_global.x() - range * std::cos(bearing);
-    double robot_y = tag_global.y() - range * std::sin(bearing);
+    // Estimate robot position (simplified, assuming robot is at ground level)
+    double robot_x = tag_global.x() - range * std::cos(elevation) * std::cos(bearing);
+    double robot_y = tag_global.y() - range * std::cos(elevation) * std::sin(bearing);
+    double robot_z = tag_global.z() - range * std::sin(elevation);
 
-    // Standard deviations for spreading out particles around the estimated location
-    double stddev_pos = 5.0;      // meters, adjust as needed
-    double stddev_theta = M_PI/4; // radians, adjust as needed
+    // Standard deviations
+    double stddev_pos = 5.0;
+    double stddev_theta = M_PI/4;
 
     // Random distributions
     std::normal_distribution<double> dist_x(robot_x, stddev_pos);
     std::normal_distribution<double> dist_y(robot_y, stddev_pos);
+    std::normal_distribution<double> dist_z(robot_z, stddev_pos);
     std::normal_distribution<double> dist_theta(0.0, stddev_theta);
 
-    // Generate particles
-    std::vector<Eigen::Vector3d> particles;
+    // Generate 6DOF particles
+    std::vector<Eigen::Matrix<double, 6, 1>> particles;
     particles.reserve(Ninit);
 
     for (int i = 0; i < Ninit; ++i) {
-        Eigen::Vector3d particle;
-        particle(0) = dist_x(gen);
-        particle(1) = dist_y(gen);
-        double new_theta = dist_theta(gen);
-        particle(2) = wrapToPi(new_theta);  // Ensure wrapToPi is defined somewhere
+        Eigen::Matrix<double, 6, 1> particle;
+        particle(0) = dist_x(gen);           // x
+        particle(1) = dist_y(gen);           // y
+        particle(2) = dist_z(gen);           // z
+        particle(3) = dist_theta(gen) * 0.1; // roll (small)
+        particle(4) = dist_theta(gen) * 0.1; // pitch (small)
+        particle(5) = dist_theta(gen);       // yaw
+        
+        // Wrap angles
+        particle(3) = wrapToPi(particle(3));
+        particle(4) = wrapToPi(particle(4));
+        particle(5) = wrapToPi(particle(5));
 
         particles.push_back(particle);
     }
@@ -566,6 +585,4 @@ std::vector<Eigen::Vector3d> initParticlesFromFirstTag(
     return particles;
 }
 
-} // namespace aprilslamcpp
-
-
+} // namespace aprilslam
