@@ -18,38 +18,30 @@ stationary_rotation_threshold: 0.1 # 0.1radius
   
 noise_models:
   odometry:  # 6 DOF: x, y, z, roll, pitch, yaw
-    - 0.1   
-    - 0.1    
-    - 0.1   
-    - 0.01   
-    - 0.01   
-    - 0.01   
-    
-  prior:  # 6 DOF: x, y, z, roll, pitch, yaw
-    - 0.1    
-    - 0.1    
-    - 0.1    
-    - 0.1 
-    - 0.1 
-    - 0.1 
-    
-  bearing_range:  # 3 DOF: bearing, elevation, range
-    - 0.1 
-    - 0.1 
-    - 0.8 
-    
-  point:  # 3 DOF: x, y, z
-    - 1.0 
-    - 1.0 
-    - 1.0 
-    
-  loopClosureNoise:  # 6 DOF: x, y, z, roll, pitch, yaw
-    - 0.01 
-    - 0.01
-    - 0.01
-    - 0.01
-    - 0.01
-    - 0.01
+    - 0.02   # x
+    - 0.15   # y
+    - 1.0    # z - even more uncertain
+    - 0.5    # roll - even more uncertain
+    - 0.5    # pitch - even more uncertain
+    - 0.02   # yaw
+  
+  prior:  # 6 DOF
+    - 0.15
+    - 0.4
+    - 1.5
+    - 0.8
+    - 0.8
+    - 0.15
+  
+  bearing_range:  # 3 DOF
+    - 0.15   # bearing
+    - 0.5    # elevation - much higher
+    - 1.0    # range
+  
+  point:  # 3 DOF
+    - 1.2
+    - 1.2
+    - 2.0    # z much more uncertain
 
 # Camera configuration
 camera_config:
