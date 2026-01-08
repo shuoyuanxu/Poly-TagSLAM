@@ -78,15 +78,17 @@ namespace aprilslam {
     
     // Detection processing 
     void processDetections(const apriltag_ros::AprilTagDetectionArray::ConstPtr& cam_msg, 
-                          const gtsam::Pose3& pose_cam_baselink, 
-                          std::vector<int>& Ids, 
-                          std::vector<Eigen::Vector3d>& tagPoss); 
+                        const gtsam::Pose3& pose_cam_baselink,
+                        std::vector<int>& Ids, 
+                        std::vector<Eigen::Vector3d>& tagPoss,
+                        bool is_3d_mode); 
     
     // Get camera detections 
     std::pair<std::vector<int>, std::vector<Eigen::Vector3d>> getCamDetections(
         const std::vector<CameraInfo>& camera_infos,
-        const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections);
-    
+        const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections,
+        bool is_3d_mode);
+
     std::vector<Eigen::Matrix<double, 6, 1>> initParticles(int Ninit);
     
     std::vector<Eigen::Matrix<double, 6, 1>> particleFilter(

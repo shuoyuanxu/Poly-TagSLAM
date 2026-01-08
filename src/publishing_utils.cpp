@@ -258,47 +258,86 @@ std::map<int, gtsam::Point3> loadLandmarksFromCSV(const std::string& filename) {
 }
 
 void processDetections(const apriltag_ros::AprilTagDetectionArray::ConstPtr& cam_msg, 
-                       const gtsam::Pose3& pose_cam_baselink,  // Now full Pose3
+                       const gtsam::Pose3& pose_cam_baselink,
                        std::vector<int>& Ids, 
-                       std::vector<Eigen::Vector3d>& tagPoss) {  // Now 3D
+                       std::vector<Eigen::Vector3d>& tagPoss,
+                       bool is_3d_mode) {
     if (cam_msg) {
         for (const auto& detection : cam_msg->detections) {
             Ids.push_back(detection.id[0]);
             
-            // Get detection position in camera frame
-            // AprilTag detection: x is right, y is down, z is forward
-            gtsam::Point3 tag_in_camera(
-                detection.pose.pose.pose.position.x,
-                detection.pose.pose.pose.position.y,
-                detection.pose.pose.pose.position.z
-            );
-            
-            // Transform to base_link frame
-            gtsam::Point3 tag_in_baselink = pose_cam_baselink.transformFrom(tag_in_camera);
-            
-            // Store as Eigen::Vector3d
-            Eigen::Vector3d tagPos;
-            tagPos << tag_in_baselink.x(), tag_in_baselink.y(), tag_in_baselink.z();
-            tagPoss.push_back(tagPos);
+            if (is_3d_mode) {
+                // ============ 3D MODE ============
+                // Use full 3D transform with Pose3
+                // Camera frame: x=right, y=down, z=forward (standard camera convention)
+                gtsam::Point3 tag_in_camera(
+                    detection.pose.pose.pose.position.x,
+                    detection.pose.pose.pose.position.y,
+                    detection.pose.pose.pose.position.z
+                );
+                
+                // Apply full 6DOF transform to get tag position in robot frame
+                gtsam::Point3 tag_in_baselink = pose_cam_baselink.transformFrom(tag_in_camera);
+                
+                // Store as Eigen::Vector3d
+                Eigen::Vector3d tagPos;
+                tagPos << tag_in_baselink.x(), tag_in_baselink.y(), tag_in_baselink.z();
+                tagPoss.push_back(tagPos);
+                
+            } else {
+                // ============ 2D MODE ============
+                // Use ORIGINAL 2D coordinate transformation logic
+                // This is critical because the Pose3 yaw-only rotation doesn't include
+                // the camera→robot coordinate frame mapping
+                
+                // Extract just the yaw from the Pose3 (ignores roll/pitch)
+                double rotTheta = pose_cam_baselink.rotation().yaw();
+                
+                // Create 2D rotation matrix around z-axis
+                Eigen::Matrix2d R;
+                R << cos(rotTheta), -sin(rotTheta),
+                     sin(rotTheta),  cos(rotTheta);
+                
+                // CRITICAL COORDINATE MAPPING:
+                // AprilTag camera frame: x=right, y=down, z=forward
+                // Robot 2D frame: x=forward, y=left
+                // Mapping: camera_z → robot_forward, -camera_x → robot_left
+                Eigen::Vector2d rotP = R * Eigen::Vector2d(
+                    detection.pose.pose.pose.position.z,   // Camera forward → Robot forward
+                    -detection.pose.pose.pose.position.x   // -Camera right → Robot left
+                );
+                
+                // Add camera translation (just xy components)
+                Eigen::Vector2d translation_2d(pose_cam_baselink.x(), pose_cam_baselink.y());
+                Eigen::Vector2d result_2d = rotP + translation_2d;
+                
+                // Return as Vector3d with z=0 for consistency with 3D interface
+                Eigen::Vector3d tagPos;
+                tagPos << result_2d.x(), result_2d.y(), 0.0;
+                tagPoss.push_back(tagPos);
+            }
         }
     }
 }
 
+// Collect detections from all cameras and transform to robot frame
 std::pair<std::vector<int>, std::vector<Eigen::Vector3d>> getCamDetections(
     const std::vector<CameraInfo>& camera_infos,
-    const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections) {
-
+    const std::map<std::string, apriltag_ros::AprilTagDetectionArray::ConstPtr>& camera_detections,
+    bool is_3d_mode) {
+    
     std::vector<int> Ids;
     std::vector<Eigen::Vector3d> tagPoss;
-
+    
     for (const auto& cam : camera_infos) {
         auto it = camera_detections.find(cam.name);
         if (it == camera_detections.end()) {
-            continue;
+            continue;  // No detections from this camera
         }
-
-        processDetections(it->second, cam.transform, Ids, tagPoss);
+        // Process detections from this camera, passing mode flag
+        processDetections(it->second, cam.transform, Ids, tagPoss, is_3d_mode);
     }
+    
     return std::make_pair(Ids, tagPoss);
 }
 

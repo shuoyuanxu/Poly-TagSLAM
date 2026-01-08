@@ -1,6 +1,19 @@
 #include "aprilslamheader.h"
 #include "publishing_utils.h"
 
+// ============================================================================
+// IMPORTANT: This file requires updated utility functions!
+// ============================================================================
+// The following functions in your utility file (publishing_utils.h or similar)
+// need to be updated to accept an 'is_3d_mode' parameter:
+//
+// 1. processDetections(..., bool is_3d_mode)
+// 2. getCamDetections(..., bool is_3d_mode)
+//
+// See camera_detection_utils_FIXED.cpp for the corrected implementations.
+// These handle the AprilTag camera coordinate frame properly in 2D vs 3D mode.
+// ============================================================================
+
 namespace aprilslam {
 // Constructor
 aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
@@ -12,6 +25,12 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("trajectory_topic", trajectory_topic);
     nh_.getParam("map_frame_id", map_frame_id);
     nh_.getParam("robot_frame", robot_frame);
+
+    // ============ Read SLAM mode ============
+    std::string slam_mode;
+    nh_.param<std::string>("slam_mode", slam_mode, "2D");
+    is_3d_mode_ = (slam_mode == "3D" || slam_mode == "3d");
+    ROS_INFO("SLAM Mode: %s", is_3d_mode_ ? "3D" : "2D");
 
     // Read batch optimization flag
     nh_.getParam("batch_optimisation", batchOptimisation_);
@@ -43,7 +62,8 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("usepriortagtable", usepriortagtable);
 
     // Load camera topics
-    if (nh_.getParam("camera_config/cameras", camera_list) && camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
+    if (nh_.getParam("camera_config/cameras", camera_list) && 
+        camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
         for (int i = 0; i < camera_list.size(); ++i) {
             if (camera_list[i].getType() != XmlRpc::XmlRpcValue::TypeStruct) continue;
 
@@ -51,8 +71,8 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
             std::string topic = static_cast<std::string>(camera_list[i]["topic"]);
             std::string frame_id = static_cast<std::string>(camera_list[i]["frame"]);
 
-            Eigen::Vector3d transform(0.0, 0.0, 0.0);
-
+            // Initialize transform as identity (will be populated from TF)
+            gtsam::Pose3 transform = gtsam::Pose3();
             camera_infos_.emplace_back(CameraInfo{name, topic, frame_id, transform});
         }
     } else {
@@ -72,20 +92,36 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
                 tf2::Vector3 trans = tf.getOrigin();
                 tf2::Quaternion rot = tf.getRotation();
 
-                // Convert to Eigen
-                Eigen::Vector3d tf_trans(trans.x(), trans.y(), trans.z());
-                Eigen::Quaterniond tf_rot(rot.w(), rot.x(), rot.y(), rot.z());
-                Eigen::Matrix3d R = tf_rot.toRotationMatrix();
-
-                Eigen::Vector3d z_axis_robot = R.col(2); 
-                z_axis_robot.z() = 0.0;  
-                z_axis_robot.normalize();  
-                double yaw = std::atan2(z_axis_robot.y(), z_axis_robot.x()); 
-
-                // Final transform
-                cam.transform = Eigen::Vector3d(tf_trans.x(), tf_trans.y(), yaw);
-                ROS_INFO("TF loaded for [%s] (%s): (%.2f, %.2f, %.2f rad)",
-                        cam.name.c_str(), cam.frame_id.c_str(), tf_trans.x(), tf_trans.y(), yaw);
+                if (is_3d_mode_) {
+                    // Full 6DOF transform for 3D mode
+                    gtsam::Point3 translation(trans.x(), trans.y(), trans.z());
+                    gtsam::Rot3 rotation = gtsam::Rot3::Quaternion(rot.w(), rot.x(), rot.y(), rot.z());
+                    cam.transform = gtsam::Pose3(rotation, translation);
+                    
+                    ROS_INFO("TF loaded for [%s] (%s): xyz(%.2f, %.2f, %.2f), rpy(%.2f, %.2f, %.2f rad)",
+                            cam.name.c_str(), cam.frame_id.c_str(), 
+                            trans.x(), trans.y(), trans.z(),
+                            rotation.roll(), rotation.pitch(), rotation.yaw());
+                } else {
+                    // 2D mode: Project camera z-axis to xy plane to get yaw
+                    // Convert to Eigen
+                    Eigen::Quaterniond tf_rot(rot.w(), rot.x(), rot.y(), rot.z());
+                    Eigen::Matrix3d R = tf_rot.toRotationMatrix();
+                    
+                    Eigen::Vector3d z_axis_robot = R.col(2);  // Camera z-axis in robot frame
+                    z_axis_robot.z() = 0.0;                   // Project to xy plane
+                    z_axis_robot.normalize();                 // Normalize
+                    double yaw = std::atan2(z_axis_robot.y(), z_axis_robot.x());
+                    
+                    // Final transform (planar)
+                    gtsam::Point3 translation(trans.x(), trans.y(), 0.0);
+                    gtsam::Rot3 rotation = gtsam::Rot3::Ypr(yaw, 0.0, 0.0);
+                    cam.transform = gtsam::Pose3(rotation, translation);
+                    
+                    ROS_INFO("TF loaded for [%s] (%s) [2D]: xy(%.2f, %.2f), yaw(%.2f rad)", 
+                            cam.name.c_str(), cam.frame_id.c_str(), 
+                            trans.x(), trans.y(), yaw);
+                }
                 success = true;
                 break;
             } else {
@@ -103,11 +139,53 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
         }
     }
 
-    // Initialize noise models
-    odometryNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << odometry_noise[0], odometry_noise[1], odometry_noise[2]).finished());
-    priorNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << prior_noise[0], prior_noise[1], prior_noise[2]).finished());
-    brNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(2) << bearing_range_noise[0], bearing_range_noise[1]).finished());
-    pointNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(2) << point_noise[0], point_noise[1]).finished());
+    // ============ Initialize noise models ============
+    if (is_3d_mode_) {
+        // 3D mode: Full 6DOF noise models
+        if (odometry_noise.size() != 6 || prior_noise.size() != 6 || 
+            bearing_range_noise.size() != 3 || point_noise.size() != 3) {
+            ROS_ERROR("3D mode requires: odometry(6), prior(6), bearing_range(3), point(3)");
+            ros::shutdown();
+            return;
+        }
+
+        odometryNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(6) << odometry_noise[0], odometry_noise[1], odometry_noise[2],
+                                 odometry_noise[3], odometry_noise[4], odometry_noise[5]).finished());
+        priorNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(6) << prior_noise[0], prior_noise[1], prior_noise[2],
+                                 prior_noise[3], prior_noise[4], prior_noise[5]).finished());
+        brNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(3) << bearing_range_noise[0], bearing_range_noise[1], 
+                                 bearing_range_noise[2]).finished());
+        pointNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(3) << point_noise[0], point_noise[1], point_noise[2]).finished());
+
+        ROS_INFO("3D noise models initialized");
+    } else {
+        // 2D mode: Use TIGHT constraints on z, roll, pitch to enforce planarity
+        if (odometry_noise.size() < 3 || prior_noise.size() < 3 || 
+            bearing_range_noise.size() < 2 || point_noise.size() < 2) {
+            ROS_ERROR("2D mode requires: odometry(3), prior(3), bearing_range(2), point(2)");
+            ros::shutdown();
+            return;
+        }
+
+        const double TIGHT = 1e-9;  // Very tight constraint for unused dimensions
+        
+        odometryNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(6) << odometry_noise[0], odometry_noise[1], TIGHT,
+                                 TIGHT, TIGHT, odometry_noise[2]).finished());
+        priorNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(6) << prior_noise[0], prior_noise[1], TIGHT,
+                                 TIGHT, TIGHT, prior_noise[2]).finished());
+        brNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(3) << bearing_range_noise[0], TIGHT, bearing_range_noise[1]).finished());
+        pointNoise = gtsam::noiseModel::Diagonal::Sigmas(
+            (gtsam::Vector(3) << point_noise[0], point_noise[1], TIGHT).finished());
+
+        ROS_INFO("2D noise models initialized (z/roll/pitch constrained)");
+    }
 
     // Total number of IDs
     int total_tags;
@@ -124,7 +202,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
 
     // Initialize GTSAM components
     initializeGTSAM();
-    // Index to keep track of the sequential pose.
+    // Index to keep track of the sequential pose
     index_of_pose = 1;
     // Initialize the factor graphs
     keyframeGraph_ = gtsam::NonlinearFactorGraph();
@@ -132,9 +210,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     // Initialize camera subscribers
     for (const auto& cam : camera_infos_) {
         ros::Subscriber sub = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(
-            cam.topic, 1,
-            boost::bind(&aprilslamcpp::cameraCallback, this, _1, cam.name)
-        );
+            cam.topic, 1, boost::bind(&aprilslamcpp::cameraCallback, this, _1, cam.name));
         camera_subscribers_.push_back(sub);
     }
 
@@ -159,37 +235,44 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
             }
         }
     });
+    
+    ROS_INFO("AprilSLAM initialized in %s mode", is_3d_mode_ ? "3D" : "2D");
 }
 
 // Destructor implementation
 aprilslamcpp::~aprilslamcpp() {
     ROS_INFO("Node is shutting down. Executing SAMOptimise().");
 
-    std::map<int, gtsam::Point2> landmarks_unoptimised;
+    // Extract unoptimized landmarks before optimization
+    std::map<int, gtsam::Point3> landmarks_unoptimised;
     for (const auto& key_value : keyframeEstimates_) {
         gtsam::Key key = key_value.key;  // Get the key
         if (gtsam::Symbol(key).chr() == 'L') {
-            gtsam::Point2 point = keyframeEstimates_.at<gtsam::Point2>(key);  // Access the Point2 value
+            gtsam::Point3 point = keyframeEstimates_.at<gtsam::Point3>(key);  // Access the Point3 value
             landmarks_unoptimised[gtsam::Symbol(key).index()] = point;
         }
     }
 
+    // Save unoptimized landmarks if required
     if (savetaglocation) {
         saveLandmarksToCSV(landmarks_unoptimised, pathtoloadlandmarkcsv);
     }
     
+    // Perform batch optimization
     gtsam::Values result = SAMOptimise();
     keyframeEstimates_ = result;
     
     // Extract landmark estimates from the result
-    std::map<int, gtsam::Point2> landmarks;
+    std::map<int, gtsam::Point3> landmarks;
     for (const auto& key_value : keyframeEstimates_) {
         gtsam::Key key = key_value.key;  // Get the key
         if (gtsam::Symbol(key).chr() == 'L') {
-            gtsam::Point2 point = keyframeEstimates_.at<gtsam::Point2>(key);  // Access the Point2 value
+            gtsam::Point3 point = keyframeEstimates_.at<gtsam::Point3>(key);  // Access the Point3 value
             landmarks[gtsam::Symbol(key).index()] = point;
         }
     }
+
+    ROS_INFO("Optimization complete: %zu landmarks", landmarks.size());
 
     // Publish the pose and landmarks
     aprilslam::publishLandmarks(landmark_pub_, landmarks, map_frame_id);
@@ -199,14 +282,14 @@ aprilslamcpp::~aprilslamcpp() {
     if (savetaglocation) {
         saveLandmarksToCSV(landmarks, pathtosavelandmarkcsv);
     }
+    
     optimizationExecuted_ = true;
     ROS_INFO("SAMOptimise() executed successfully.");
 }
 
-// Callback function for Cam topic
-void aprilslamcpp::cameraCallback(
-    const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg,
-    const std::string& camera_name) {    
+// Callback function for Camera topic
+void aprilslamcpp::cameraCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg,
+                                   const std::string& camera_name) {    
     if (!msg->detections.empty()) {
         camera_detections_[camera_name] = msg;
         received_camera_names_.insert(camera_name);
@@ -215,13 +298,13 @@ void aprilslamcpp::cameraCallback(
     }
 }
 
+// Get static transform between two frames
 bool aprilslamcpp::getStaticTransform(const std::string& target_frame,
                                       const std::string& source_frame,
                                       tf2::Transform& out_tf) {
     try {
         geometry_msgs::TransformStamped transform_stamped =
-            tf_buffer_.lookupTransform(target_frame, source_frame,
-                                       ros::Time(0), ros::Duration(2.0));
+            tf_buffer_.lookupTransform(target_frame, source_frame, ros::Time(0), ros::Duration(2.0));
         tf2::fromMsg(transform_stamped.transform, out_tf);
         return true;
     } catch (tf2::TransformException& ex) {
@@ -233,211 +316,320 @@ bool aprilslamcpp::getStaticTransform(const std::string& target_frame,
 
 // Initialization of GTSAM components
 void aprilslamcpp::initializeGTSAM() { 
-    // Initialize graph parameters and stores them in isam_.
+    // Initialize graph parameters and store them in isam_
     gtsam::ISAM2Params parameters;
     parameters.relinearizeThreshold = 0.1;
     parameters.relinearizeSkip = 1;
     isam_ = gtsam::ISAM2(parameters);
 }
 
-gtsam::Pose2 aprilslamcpp::translateOdomMsg(const nav_msgs::Odometry::ConstPtr& msg) {
+// ============ Helper: Make pose planar (z=0, roll=0, pitch=0) for 2D mode ============
+gtsam::Pose3 aprilslamcpp::makePlanar(const gtsam::Pose3& pose) {
+    if (is_3d_mode_) return pose;  // In 3D mode, return as-is
+    
+    // In 2D mode, constrain to xy plane with only yaw rotation
+    double x = pose.x();
+    double y = pose.y();
+    double yaw = pose.rotation().yaw();
+    
+    return gtsam::Pose3(gtsam::Rot3::Ypr(yaw, 0.0, 0.0), gtsam::Point3(x, y, 0.0));
+}
+
+// Make point planar (z=0) for 2D mode
+gtsam::Point3 aprilslamcpp::makePlanar(const gtsam::Point3& point) {
+    if (is_3d_mode_) return point;  // In 3D mode, return as-is
+    return gtsam::Point3(point.x(), point.y(), 0.0);
+}
+
+// Translate odometry message to GTSAM Pose3
+gtsam::Pose3 aprilslamcpp::translateOdomMsg(const nav_msgs::Odometry::ConstPtr& msg) {
     double x = msg->pose.pose.position.x;
     double y = msg->pose.pose.position.y;
+    double z = msg->pose.pose.position.z;
 
     double qx = msg->pose.pose.orientation.x;
     double qy = msg->pose.pose.orientation.y;
     double qz = msg->pose.pose.orientation.z;
     double qw = msg->pose.pose.orientation.w;
 
-    tf2::Quaternion tfQuat(qx, qy, qz, qw);
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(tfQuat).getRPY(roll, pitch, yaw);
-    return gtsam::Pose2(x, y, yaw);
+    if (is_3d_mode_) {
+        // Full 6DOF pose from quaternion
+        gtsam::Rot3 rotation = gtsam::Rot3::Quaternion(qw, qx, qy, qz);
+        gtsam::Point3 translation(x, y, z);
+        return gtsam::Pose3(rotation, translation);
+    } else {
+        // 2D: Extract yaw only, constrain z=0, roll=0, pitch=0
+        tf2::Quaternion tfQuat(qx, qy, qz, qw);
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(tfQuat).getRPY(roll, pitch, yaw);
+        
+        return gtsam::Pose3(gtsam::Rot3::Ypr(yaw, 0.0, 0.0), gtsam::Point3(x, y, 0.0));
+    }
 }
 
+// Batch optimization using Levenberg-Marquardt
 gtsam::Values aprilslamcpp::SAMOptimise() {    
+    ROS_INFO("Starting batch optimization: %zu factors, %zu variables", 
+             keyframeGraph_.size(), keyframeEstimates_.size());
+    
     // Perform batch optimization using Levenberg-Marquardt optimizer
     gtsam::LevenbergMarquardtOptimizer batchOptimizer(keyframeGraph_, keyframeEstimates_);
     gtsam::Values result = batchOptimizer.optimize();
+    
+    ROS_INFO("Optimization complete. Final error: %.6f", keyframeGraph_.error(result));
     return result;
 }
 
 // Check if movement exceeds the stationary thresholds
-bool aprilslam::aprilslamcpp::movementExceedsThreshold(const gtsam::Pose2& poseSE2) {
-    double position_change = std::hypot(poseSE2.x() - lastPoseSE2_.x(), poseSE2.y() - lastPoseSE2_.y());
-    double rotation_change = std::abs(wrapToPi(poseSE2.theta() - lastPoseSE2_.theta()));
-    return position_change >= stationary_position_threshold || rotation_change >= stationary_rotation_threshold;
+bool aprilslam::aprilslamcpp::movementExceedsThreshold(const gtsam::Pose3& poseSE3) {
+    gtsam::Point3 currentPos = poseSE3.translation();
+    gtsam::Point3 lastPos = lastPoseSE3_.translation();
+    
+    // Calculate position change
+    double position_change;
+    if (is_3d_mode_) {
+        // 3D: Use full 3D distance
+        position_change = (currentPos - lastPos).norm();
+    } else {
+        // 2D: Use only xy distance
+        position_change = std::hypot(currentPos.x() - lastPos.x(), currentPos.y() - lastPos.y());
+    }
+    
+    // Calculate rotation change using axis-angle representation
+    gtsam::Rot3 rotationDelta = lastPoseSE3_.rotation().between(poseSE3.rotation());
+    double rotation_change = rotationDelta.axisAngle().second;  // Get angle magnitude
+    
+    return position_change >= stationary_position_threshold || 
+           rotation_change >= stationary_rotation_threshold;
 }
 
 // Handle initialization of the first pose
-void aprilslam::aprilslamcpp::initializeFirstPose(const gtsam::Pose2& poseSE2, gtsam::Pose2& pose0) {
-    lastPoseSE2_ = poseSE2;
-    lastPoseSE2_vis = poseSE2;
-    keyframeGraph_.add(gtsam::PriorFactor<gtsam::Pose2>(gtsam::Symbol('X', 1), pose0, priorNoise));
+void aprilslam::aprilslamcpp::initializeFirstPose(const gtsam::Pose3& poseSE3, gtsam::Pose3& pose0) {
+    lastPoseSE3_ = makePlanar(poseSE3);
+    lastPoseSE3_vis = lastPoseSE3_;
+    
+    // Add prior factor at origin for the first pose
+    keyframeGraph_.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('X', 1), pose0, priorNoise));
     keyframeEstimates_.insert(gtsam::Symbol('X', 1), pose0);
     Estimates_visulisation.insert(gtsam::Symbol('X', 1), pose0);
-    lastPose_ = pose0; // Keep track of the last pose for odolandmarkKeymetry calculation
+    lastPose_ = pose0;  // Keep track of the last pose for odometry calculation
+    
     // Load calibrated landmarks as priors if available
     if (usepriortagtable) {
-    std::map<int, gtsam::Point2> savedLandmarks = loadLandmarksFromCSV(pathtoloadlandmarkcsv);
+        ROS_INFO("Loading landmarks from: %s", pathtoloadlandmarkcsv.c_str());
+        std::map<int, gtsam::Point3> savedLandmarks = loadLandmarksFromCSV(pathtoloadlandmarkcsv);
+        ROS_INFO("Loaded %zu landmarks as priors", savedLandmarks.size());
+        
         for (const auto& landmark : savedLandmarks) {
             gtsam::Symbol landmarkKey('L', landmark.first);
-            keyframeGraph_.add(gtsam::PriorFactor<gtsam::Point2>(landmarkKey, landmark.second, pointNoise));
-            keyframeEstimates_.insert(landmarkKey, landmark.second);
-            landmarkEstimates.insert(landmarkKey, landmark.second);
+            gtsam::Point3 pt = makePlanar(landmark.second);  // Ensure z=0 in 2D mode
+            
+            // Add prior factor for each pre-calibrated landmark
+            keyframeGraph_.add(gtsam::PriorFactor<gtsam::Point3>(landmarkKey, pt, pointNoise));
+            keyframeEstimates_.insert(landmarkKey, pt);
+            landmarkEstimates.insert(landmarkKey, pt);
         }
     }
+    
     Key_previous_pos = pose0;
     previousKeyframeSymbol = gtsam::Symbol('X', 1);
+    ROS_INFO("First pose initialized at origin");
 }
 
 // Predict the next pose based on odometry
-gtsam::Pose2 aprilslam::aprilslamcpp::predictNextPose(const gtsam::Pose2& poseSE2) {
-    gtsam::Pose2 odometry = relPoseFG(lastPoseSE2_, poseSE2);
-    // gtsam::Pose2 adjustedOdometry = odometryDirection(odometry, linear_x_velocity_);
-    return lastPose_.compose(odometry);
+gtsam::Pose3 aprilslam::aprilslamcpp::predictNextPose(const gtsam::Pose3& poseSE3) {
+    // Compute relative odometry between last and current pose
+    gtsam::Pose3 odometry = lastPoseSE3_.between(poseSE3);
+    // Compose with last optimized pose to get predicted pose
+    gtsam::Pose3 predicted = lastPose_.compose(odometry);
+    return makePlanar(predicted);  // Ensure planarity in 2D mode
 }
 
-// Update the graph with landmarks detections
+// Update the graph with landmark detections
 std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
     std::set<gtsam::Symbol> detectedLandmarksCurrentPos, 
-    const std::pair<std::vector<int>, std::vector<Eigen::Vector2d>>& detections) {
+    const std::pair<std::vector<int>, std::vector<Eigen::Vector3d>>& detections) {
 
     // Access the elements of the std::pair   
     const std::vector<int>& Id = detections.first;
-    const std::vector<Eigen::Vector2d>& tagPos = detections.second;
+    const std::vector<Eigen::Vector3d>& tagPos = detections.second;
 
     if (!Id.empty()) {
         for (size_t n = 0; n < Id.size(); ++n) {
             int tag_number = Id[n];        
-            Eigen::Vector2d landSE2 = tagPos[n];
+            Eigen::Vector3d landSE3 = tagPos[n];  // Landmark position in robot frame (ORIGINAL 3D from camera!)
 
-            // Compute prior location of the landmark using the current robot pose
-            double theta = lastPose_.theta();
-            Eigen::Rotation2Dd rotation(theta);  // Create a 2D rotation matrix
-            Eigen::Vector2d rotatedPosition = rotation * landSE2;  // Rotate the position into the robot's frame
-            gtsam::Point2 priorLand(rotatedPosition.x() + lastPose_.x(), rotatedPosition.y() + lastPose_.y());
+            // ============ CRITICAL: Compute prior location of the landmark in world frame ============
+            // Transform landmark from robot frame to world frame using current robot pose
+            gtsam::Point3 landmarkInRobotFrame(landSE3(0), landSE3(1), landSE3(2));
+            gtsam::Point3 priorLand = lastPose_.transformFrom(landmarkInRobotFrame);
+            
+            // In 2D mode, constrain initial estimate to z=0
+            priorLand = makePlanar(priorLand);
 
-            // Compute bearing and range
-            double bearing = std::atan2(landSE2(1), landSE2(0));
-            double range = std::sqrt(landSE2(0) * landSE2(0) + landSE2(1) * landSE2(1));
-
+            // ============ Compute bearing and range ============
+            // CRITICAL FOR 2D MODE: Must project bearing to xy plane!
+            // Using 3D bearing in 2D mode causes landmarks to be pulled toward robot trajectory
+            // because the 3D bearing direction conflicts with the z=0 constraint on landmarks.
+            gtsam::Unit3 bearing;
+            double range;
+            
+            if (is_3d_mode_) {
+                // 3D: Use full 3D bearing and range
+                Eigen::Vector3d landSE3_normalized = landSE3.normalized();
+                bearing = gtsam::Unit3(landSE3_normalized);
+                range = landSE3.norm();
+            } else {
+                // 2D: Project bearing to xy plane, ignore elevation!
+                // Only use xy components for bearing direction
+                Eigen::Vector3d bearing_2d(landSE3(0), landSE3(1), 0.0);
+                bearing_2d.normalize();
+                bearing = gtsam::Unit3(bearing_2d);  // Horizontal bearing only
+                // Use xy distance for range in 2D mode
+                range = std::sqrt(landSE3(0) * landSE3(0) + landSE3(1) * landSE3(1));
+            }
+            
             // Construct the landmark key
             gtsam::Symbol landmarkKey('L', tag_number);  
 
             // Check if the landmark has been observed before
             if (detectedLandmarksHistoric.find(landmarkKey) != detectedLandmarksHistoric.end()) {
-                    // Existing landmark
-                    gtsam::BearingRangeFactor<gtsam::Pose2, gtsam::Point2, gtsam::Rot2, double> factor(
-                        gtsam::Symbol('X', index_of_pose), landmarkKey, gtsam::Rot2::fromAngle(bearing), range, brNoise
-                    );
-                    gtsam::Vector error = factor.unwhitenedError(landmarkEstimates);
-
-                    // Threshold for ||projection - measurement||
-                    if (fabs(error[0]) < add2graph_threshold) keyframeGraph_.add(factor);
-            } 
-            else {
+                // Existing landmark - add bearing-range measurement with error checking
+                gtsam::BearingRangeFactor<gtsam::Pose3, gtsam::Point3> factor(
+                    gtsam::Symbol('X', index_of_pose), landmarkKey, bearing, range, brNoise);
+                
+                gtsam::Vector error = factor.unwhitenedError(landmarkEstimates);
+                
+                // Threshold for ||projection - measurement||
+                if (error.norm() < add2graph_threshold) {
+                    keyframeGraph_.add(factor);
+                }
+            } else {
+                // New landmark detected
                 // If the current landmark was not detected in the calibration run 
                 // Or it's on calibration mode
                 if (!landmarkEstimates.exists(landmarkKey) || !usepriortagtable) {
-                // New landmark detected
-                detectedLandmarksHistoric.insert(landmarkKey);
-                // Check if the key already exists in keyframeEstimates_ before inserting
-                if (keyframeEstimates_.exists(landmarkKey)) {
-                } else {
-                    keyframeEstimates_.insert(landmarkKey, priorLand); // Simple initial estimate
-                }
+                    detectedLandmarksHistoric.insert(landmarkKey);
+                    
+                    // Check if the key already exists in keyframeEstimates_ before inserting
+                    if (!keyframeEstimates_.exists(landmarkKey)) {
+                        keyframeEstimates_.insert(landmarkKey, priorLand);  // Simple initial estimate
+                    }
 
-                // Check if the key already exists in landmarkEstimates before inserting
-                if (landmarkEstimates.exists(landmarkKey)) {
-                } else {
-                    landmarkEstimates.insert(landmarkKey, priorLand);
-                }
+                    // Check if the key already exists in landmarkEstimates before inserting
+                    if (!landmarkEstimates.exists(landmarkKey)) {
+                        landmarkEstimates.insert(landmarkKey, priorLand);
+                    }
 
-                // Add a prior for the landmark position to help with initial estimation.
-                keyframeGraph_.add(gtsam::PriorFactor<gtsam::Point2>(
-                    landmarkKey, priorLand, pointNoise)
-                );
+                    // Add a prior for the landmark position to help with initial estimation
+                    keyframeGraph_.add(gtsam::PriorFactor<gtsam::Point3>(landmarkKey, priorLand, pointNoise));
+                    
+                    ROS_INFO("New landmark L%d at (%.2f, %.2f, %.2f)", 
+                            tag_number, priorLand.x(), priorLand.y(), priorLand.z());
                 }
+                
                 // Add a bearing-range observation for this landmark to the graph
-                gtsam::BearingRangeFactor<gtsam::Pose2, gtsam::Point2, gtsam::Rot2, double> factor(
-                    gtsam::Symbol('X', index_of_pose), landmarkKey, gtsam::Rot2::fromAngle(bearing), range, brNoise
-                );
+                gtsam::BearingRangeFactor<gtsam::Pose3, gtsam::Point3> factor(
+                    gtsam::Symbol('X', index_of_pose), landmarkKey, bearing, range, brNoise);
                 keyframeGraph_.add(factor);
             }
-            // Store the bearing and range measurements in the map
-            poseToLandmarkMeasurementsMap[gtsam::Symbol('X', index_of_pose)][landmarkKey] = std::make_tuple(bearing, range); 
+            
+            // Store the bearing and range measurements in the map (for visualization)
+            if (is_3d_mode_) {
+                double bearing_angle = std::atan2(landSE3(1), landSE3(0));
+                double elevation = std::atan2(landSE3(2), std::sqrt(landSE3(0)*landSE3(0) + landSE3(1)*landSE3(1)));
+                poseToLandmarkMeasurementsMap[gtsam::Symbol('X', index_of_pose)][landmarkKey] = 
+                    std::make_tuple(bearing_angle, elevation, range);
+            } else {
+                double bearing_angle = std::atan2(landSE3(1), landSE3(0));
+                poseToLandmarkMeasurementsMap[gtsam::Symbol('X', index_of_pose)][landmarkKey] = 
+                    std::make_tuple(bearing_angle, 0.0, range);  // elevation = 0 in 2D
+            }
         }
     }
     return detectedLandmarksCurrentPos;
 }
 
+// Main odometry callback - adds odometry factors and processes landmarks
 void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& msg) {
-    // Convert the incoming odometry message to a simpler (x, y, theta) format using a previously defined method
-    gtsam::Pose2 poseSE2 = translateOdomMsg(msg);
-
+    // Convert the incoming odometry message to Pose3 format
+    gtsam::Pose3 poseSE3 = translateOdomMsg(msg);  // Already planar in 2D mode
+    
     // Store the initial pose for relative calculations
-    pose0 = gtsam::Pose2(0.0, 0.0, 0.0); // Prior at origin
+    pose0 = gtsam::Pose3();  // Prior at origin
 
     // Check if the movement exceeds the thresholds
-    if (!movementExceedsThreshold(poseSE2)) return;
+    if (!movementExceedsThreshold(poseSE3)) return;
 
-    index_of_pose += 1; // Increment the pose index for each new odometry message
-    if (index_of_pose == 2) initializeFirstPose(poseSE2, pose0);
+    index_of_pose += 1;  // Increment the pose index for each new odometry message
+    
+    if (index_of_pose == 2) {
+        initializeFirstPose(poseSE3, pose0);
+    }
 
     // Predict the next pose based on odometry and add it as an initial estimate
-    gtsam::Pose2 predictedPose = predictNextPose(poseSE2);
+    gtsam::Pose3 predictedPose = predictNextPose(poseSE3);
 
     // Determine if this pose should be a keyframe
     gtsam::Symbol currentKeyframeSymbol('X', index_of_pose);
 
-    // Add odometry factor
-    keyframeEstimates_.insert(gtsam::Symbol('X', index_of_pose), predictedPose);
+    // Add odometry factor (between factor)
+    keyframeEstimates_.insert(currentKeyframeSymbol, predictedPose);
+    
     if (previousKeyframeSymbol) {
-        gtsam::Pose2 relativePose = Key_previous_pos.between(predictedPose);
-        keyframeGraph_.add(gtsam::BetweenFactor<gtsam::Pose2>(previousKeyframeSymbol, currentKeyframeSymbol, relativePose, odometryNoise));
+        gtsam::Pose3 relativePose = Key_previous_pos.between(predictedPose);
+        keyframeGraph_.add(gtsam::BetweenFactor<gtsam::Pose3>(
+            previousKeyframeSymbol, currentKeyframeSymbol, relativePose, odometryNoise));
     }
         
     // Update the last pose and initial estimates for the next iteration
     lastPose_ = predictedPose;
-    landmarkEstimates.insert(gtsam::Symbol('X', index_of_pose), predictedPose);
+    landmarkEstimates.insert(currentKeyframeSymbol, predictedPose);
 
     std::set<gtsam::Symbol> detectedLandmarksCurrentPos;
     
     // Iterate through all landmark detected IDs
-    auto detections = getCamDetections(camera_infos_, camera_detections_);
+    // CRITICAL: Pass is_3d_mode_ so processDetections uses correct coordinate transformation
+    auto detections = getCamDetections(camera_infos_, camera_detections_, is_3d_mode_);
     if (!detections.first.empty()) {
         detectedLandmarksCurrentPos = updateGraphWithLandmarks(detectedLandmarksCurrentPos, detections);
     }
     
-    lastPoseSE2_ = poseSE2;
+    lastPoseSE3_ = poseSE3;
     Key_previous_pos = predictedPose;
 
-    // Visulisation
-    previousKeyframeSymbol = gtsam::Symbol('X', index_of_pose);
-     // Extract landmark estimates from the result
-    std::map<int, gtsam::Point2> landmarks;
+    // Visualization
+    previousKeyframeSymbol = currentKeyframeSymbol;
+    
+    // Extract landmark estimates from the result
+    std::map<int, gtsam::Point3> landmarks;
     for (const auto& key_value : keyframeEstimates_) {
         gtsam::Key key = key_value.key;  // Get the key
         if (gtsam::Symbol(key).chr() == 'L') {
-            gtsam::Point2 point = keyframeEstimates_.at<gtsam::Point2>(key);  // Access the Point2 value
+            gtsam::Point3 point = keyframeEstimates_.at<gtsam::Point3>(key);  // Access the Point3 value
             landmarks[gtsam::Symbol(key).index()] = point;
         }
     }
+    
     // Publish the pose and landmarks
     aprilslam::publishLandmarks(landmark_pub_, landmarks, map_frame_id);
     aprilslam::publishPath(path_pub_, keyframeEstimates_, index_of_pose, map_frame_id);
 
-    // Save the landmarks into a CSV file if required
-    if (savetaglocation) {
+    // Save the landmarks into a CSV file if required (periodically to avoid overhead)
+    if (savetaglocation && index_of_pose % 10 == 0) {
         saveLandmarksToCSV(landmarks, pathtosavelandmarkcsv);
+    }
+    
+    // Periodic status update
+    if (index_of_pose % 50 == 0) {
+        ROS_INFO("Processed %d poses, tracking %zu landmarks", index_of_pose, landmarks.size());
     }
 }
 }
 
 int main(int argc, char **argv) {
     // Initialize the ROS system and specify the name of the node
-    ros::init(argc, argv, "april_slam_cpp");
+    ros::init(argc, argv, "april_slam_unified");
 
     // Create a handle to this process' node
     ros::NodeHandle nh;
