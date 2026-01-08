@@ -81,6 +81,9 @@ public:
     bool getStaticTransform(const std::string& target_frame,
                            const std::string& source_frame,
                            tf2::Transform& out_tf);
+
+    gtsam::Pose3 makePlanar(const gtsam::Pose3& pose);
+    gtsam::Point3 makePlanar(const gtsam::Point3& point);
                            
 private:
     ros::Timer check_data_timer_;
@@ -226,6 +229,9 @@ private:
     gtsam::Pose3 lastPose_for_jump;
     bool useoutlierremoval;
     bool usetrajsmoothing;
+
+    // 3D or 2D mode
+    bool is_3d_mode_;  // true for 3D SLAM, false for 2D SLAM
 };
 
 } 
