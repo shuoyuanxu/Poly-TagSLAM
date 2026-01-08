@@ -116,7 +116,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
                 tf2::Vector3 trans = tf.getOrigin();
                 tf2::Quaternion rot = tf.getRotation();
 
-                // Convert to GTSAM Pose3
+                // Convert to GTSAM Pose3 - Full 6DOF transform for 3D mode
                 gtsam::Point3 translation(trans.x(), trans.y(), trans.z());
                 gtsam::Rot3 rotation = gtsam::Rot3::Quaternion(rot.w(), rot.x(), rot.y(), rot.z());
                 cam.transform = gtsam::Pose3(rotation, translation);
@@ -161,6 +161,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     // Load saveLandmarks
     savedLandmarks = loadLandmarksFromCSV(pathtoloadlandmarkcsv);
 
+    // Initialize noise models for 3D SLAM
     odometryNoise = gtsam::noiseModel::Diagonal::Sigmas(
         (gtsam::Vector(6) << odometry_noise[0], odometry_noise[1], odometry_noise[2],
                               odometry_noise[3], odometry_noise[4], odometry_noise[5]).finished());
@@ -216,6 +217,8 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     landmark_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("landmarks", 1, true);
     path.header.frame_id = map_frame_id; 
     odom_traj_pub_ = nh_.advertise<nav_msgs::Odometry>("/odom_tag", 1, true);
+    
+    ROS_INFO("AprilSLAM 3D initialized with full features (loop closure, PF init, etc.)");
 }
 
 double aprilslamcpp::computePoseDelta(const gtsam::Pose3& oldPose, const gtsam::Pose3& newPose){
@@ -246,7 +249,8 @@ void aprilslamcpp::pfInitCallback(const ros::TimerEvent& event) {
         return;
     }
 
-    auto detections = getCamDetections(camera_infos_, camera_detections_);
+    // FIXED: Pass 'true' for 3D mode
+    auto detections = getCamDetections(camera_infos_, camera_detections_, true);
     const std::vector<int>& Id = detections.first;
     const std::vector<Eigen::Vector3d>& tagPos = detections.second;  
         
@@ -667,6 +671,7 @@ std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
             gtsam::Symbol landmarkKey('L', tag_number);  
 
             if (detectedLandmarksHistoric.find(landmarkKey) != detectedLandmarksHistoric.end()) {
+                // Existing landmark - use full 3D bearing
                 gtsam::BearingRangeFactor<gtsam::Pose3, gtsam::Point3> factor(
                     gtsam::Symbol('X', index_of_pose), landmarkKey, 
                     gtsam::Unit3(landSE3), range, brNoise
@@ -678,7 +683,7 @@ std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
 
                 detectedLandmarksCurrentPos.insert(landmarkKey);
             } else {
-                // Compute prior location using full 3D transformation
+                // New landmark - compute prior location using full 3D transformation
                 gtsam::Point3 landmarkInRobotFrame(landSE3(0), landSE3(1), landSE3(2));
                 gtsam::Point3 priorLand = lastPose_.transformFrom(landmarkInRobotFrame);
 
@@ -698,6 +703,7 @@ std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
                     );
                 }
 
+                // Add bearing-range factor with full 3D bearing
                 gtsam::BearingRangeFactor<gtsam::Pose3, gtsam::Point3> factor(
                     gtsam::Symbol('X', index_of_pose), landmarkKey,
                     gtsam::Unit3(landSE3), range, brNoise
@@ -760,7 +766,8 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         landmarkEstimates.insert(gtsam::Symbol('X', index_of_pose), predictedPose);
 
         start_loop = ros::WallTime::now();
-        auto detections = getCamDetections(camera_infos_, camera_detections_);
+        // FIXED: Pass 'true' for 3D mode
+        auto detections = getCamDetections(camera_infos_, camera_detections_, true);
         if (!detections.first.empty()) {
             detectedLandmarksCurrentPos = updateGraphWithLandmarks(detectedLandmarksCurrentPos, detections);
         } 
@@ -829,7 +836,7 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
 }
 
 int main(int argc, char **argv) {
-    ros::init(argc, argv, "april_slam_cpp");
+    ros::init(argc, argv, "april_slam_3d_full");
     ros::NodeHandle nh;
     aprilslam::aprilslamcpp slamNode(nh);
     ros::spin();
