@@ -1,5 +1,5 @@
-odom_topic: "/lio_sam/mapping/odometry"
-robot_frame: "base_link"  # lboro data
+odom_topic: "robot/dlo/odom_node/odom"
+robot_frame: "robot/base_link"  # lboro data
 # robot_frame: "base_link"  # antobot data
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
@@ -13,59 +13,59 @@ add2graph_threshold: 0.2
 inactivity_threshold: 30.0
 
 # SLAM configuration
-slam_mode: "3D"  # or "3D"
+slam_mode: "2D"  # or "3D"
 
 # Stationary threshold
 stationary_position_threshold: 0.05 # 5cm
 stationary_rotation_threshold: 0.1 # 0.1radius
 
 # 2D noise models
-# noise_models:
-#   odometry:
-#     - 0.01
-#     - 0.1
-#     - 0.01
-#   prior:
-#     - 0.1
-#     - 0.3
-#     - 0.1
-#   bearing_range:
-#     - 0.1
-#     - 0.8
-#   point:
-#     - 1
-#     - 1
-#   loopClosureNoise:
-#     - 0.01
-#     - 0.01
+noise_models:
+  odometry:
+    - 0.01
+    - 0.1
+    - 0.01
+  prior:
+    - 0.1
+    - 0.3
+    - 0.1
+  bearing_range:
+    - 0.1
+    - 0.8
+  point:
+    - 1
+    - 1
+  loopClosureNoise:
+    - 0.01
+    - 0.01
 
 # 3D noise models
-noise_models:
-  odometry:  # 6 DOF: x, y, z, roll, pitch, yaw
-    - 0.02   # x
-    - 0.15   # y
-    - 1.0    # z - even more uncertain
-    - 0.5    # roll - even more uncertain
-    - 0.5    # pitch - even more uncertain
-    - 0.02   # yaw
+# noise_models:
+#   odometry:  # 6 DOF: x, y, z, roll, pitch, yaw
+#     - 0.02   # x
+#     - 0.15   # y
+#     - 1.0    # z - even more uncertain
+#     - 0.5    # roll - even more uncertain
+#     - 0.5    # pitch - even more uncertain
+#     - 0.02   # yaw
   
-  prior:  # 6 DOF
-    - 0.15
-    - 0.4
-    - 1.5
-    - 0.8
-    - 0.8
-    - 0.15
+#   prior:  # 6 DOF
+#     - 0.15
+#     - 0.4
+#     - 1.5
+#     - 0.8
+#     - 0.8
+#     - 0.15
   
-  bearing_range:  # 3 DOF
-    - 0.15   # bearing
-    - 0.5    # elevation - much higher
-    - 1.0    # range
+#   bearing_range:  # 3 DOF
+#     - 0.15   # bearing
+#     - 0.5    # elevation - much higher
+#     - 1.0    # range
   
-  point:  # 3 DOF
-    - 1.2
-    - 1.2
-    - 2.0    # z much more uncertain
+#   point:  # 3 DOF
+#     - 1.2
+#     - 1.2
+#     - 2.0    # z much more uncertain
 
 # Camera configuration
 camera_config:
