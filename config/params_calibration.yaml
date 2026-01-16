@@ -1,5 +1,5 @@
-odom_topic: "robot/dlo/odom_node/odom"
-robot_frame: "robot/base_link"  # lboro data
+odom_topic: "/lio_sam/mapping/odometry"
+robot_frame: "base_link"  # lboro data
 # robot_frame: "base_link"  # antobot data
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
@@ -44,17 +44,17 @@ noise_models:
     - 2.0    # z much more uncertain
 
 # Camera configuration
-camera_config:
-  cameras:
-    - name: lCam
-      topic: "/l/tag_detections"
-      frame: "usb_cam_l"
-    - name: rCam
-      topic: "/r/tag_detections"
-      frame: "usb_cam_r"
-    - name: mCam
-      topic: "/m/tag_detections"
-      frame: "usb_cam_m"
+# camera_config:
+#   cameras:
+#     - name: lCam
+#       topic: "/l/tag_detections"
+#       frame: "usb_cam_l"
+#     - name: rCam
+#       topic: "/r/tag_detections"
+#       frame: "usb_cam_r"
+#     - name: mCam
+#       topic: "/m/tag_detections"
+#       frame: "usb_cam_m"
 
 # camera_config:
 #   cameras:
@@ -67,11 +67,11 @@ camera_config:
 #       frame: "picam2"
 #       transform: [0, 0, -0.39]
 
-# camera_config:
-#   cameras:
-#     - name: lCam
-#       topic: "/left/tag_detections"
-#       frame: "left_cam"
-#     - name: rCam
-#       topic: "/right/tag_detections"
-#       frame: "right_cam"
+camera_config:
+  cameras:
+    - name: lCam
+      topic: "/left/tag_detections"
+      frame: "left_cam"
+    - name: rCam
+      topic: "/right/tag_detections"
+      frame: "right_cam"
