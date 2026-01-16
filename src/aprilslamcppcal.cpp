@@ -1,19 +1,6 @@
 #include "aprilslamheader.h"
 #include "publishing_utils.h"
 
-// ============================================================================
-// IMPORTANT: This file requires updated utility functions!
-// ============================================================================
-// The following functions in your utility file (publishing_utils.h or similar)
-// need to be updated to accept an 'is_3d_mode' parameter:
-//
-// 1. processDetections(..., bool is_3d_mode)
-// 2. getCamDetections(..., bool is_3d_mode)
-//
-// See camera_detection_utils_FIXED.cpp for the corrected implementations.
-// These handle the AprilTag camera coordinate frame properly in 2D vs 3D mode.
-// ============================================================================
-
 namespace aprilslam {
 // Constructor
 aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
