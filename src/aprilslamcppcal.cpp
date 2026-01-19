@@ -16,7 +16,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     // Read batch optimization flag
     nh_.getParam("batch_optimisation", batchOptimisation_);
 
-    // ============ 3D SLAM: Noise models are now 6DOF/3DOF ============
+    // ============ Noise models are now 6DOF/3DOF ============
     std::vector<double> odometry_noise, prior_noise, bearing_range_noise, point_noise;
     nh_.getParam("noise_models/odometry", odometry_noise);      // Expects 6 values
     nh_.getParam("noise_models/prior", prior_noise);            // Expects 6 values
@@ -42,7 +42,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("savetaglocation", savetaglocation);
     nh_.getParam("usepriortagtable", usepriortagtable);
 
-    // ============ 3D SLAM: Camera info with full Pose3 transforms ============
+    // ============ Camera info with full Pose3 transforms ============
     if (nh_.getParam("camera_config/cameras", camera_list) && 
         camera_list.getType() == XmlRpc::XmlRpcValue::TypeArray) {
         for (int i = 0; i < camera_list.size(); ++i) {
@@ -60,7 +60,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
         ROS_WARN("Failed to load camera_config/cameras or invalid format.");
     }
 
-    // ============ 3D SLAM: Wait for static transforms and convert to Pose3 ============
+    // ============ Wait for static transforms and convert to Pose3 ============
     for (auto& cam : camera_infos_) {
         tf2::Transform tf;
         const int max_attempts = 20;
@@ -99,7 +99,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
         }
     }
 
-    // ============ 3D SLAM: Initialize noise models (6DOF poses, 3DOF points, 3DOF bearing-range) ============
+    // ============ Initialize noise models ============
     // Validate noise model sizes
     if (odometry_noise.size() != 6) {
         ROS_ERROR("Odometry noise must have 6 values (x,y,z,roll,pitch,yaw). Got %zu", odometry_noise.size());
@@ -200,7 +200,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     ROS_INFO("3D AprilSLAM calibration node initialized successfully.");
 }
 
-// ============ 3D SLAM: Destructor with Point3 landmarks ============
+// ============ Destructor ============
 aprilslamcpp::~aprilslamcpp() {
     ROS_INFO("Node is shutting down. Executing SAMOptimise().");
 
@@ -286,7 +286,7 @@ void aprilslamcpp::initializeGTSAM() {
     isam_ = gtsam::ISAM2(parameters);
 }
 
-// ============ 3D SLAM: Convert odometry message to Pose3 ============
+// ============ Convert odometry message to Pose3 ============
 gtsam::Pose3 aprilslamcpp::translateOdomMsg(const nav_msgs::Odometry::ConstPtr& msg) {
     double x = msg->pose.pose.position.x;
     double y = msg->pose.pose.position.y;
@@ -314,7 +314,7 @@ gtsam::Values aprilslamcpp::SAMOptimise() {
     return result;
 }
 
-// ============ 3D SLAM: Check movement threshold with Pose3 ============
+// ============ Check movement threshold ============
 bool aprilslam::aprilslamcpp::movementExceedsThreshold(const gtsam::Pose3& poseSE3) {
     gtsam::Point3 currentPos = poseSE3.translation();
     gtsam::Point3 lastPos = lastPoseSE3_.translation();
@@ -329,7 +329,7 @@ bool aprilslam::aprilslamcpp::movementExceedsThreshold(const gtsam::Pose3& poseS
            rotation_change >= stationary_rotation_threshold;
 }
 
-// ============ 3D SLAM: Initialize first pose with Pose3 ============
+// ============ Initialize first pose ============
 void aprilslam::aprilslamcpp::initializeFirstPose(const gtsam::Pose3& poseSE3, gtsam::Pose3& pose0) {
     lastPoseSE3_ = poseSE3;
     lastPoseSE3_vis = poseSE3;
@@ -363,13 +363,13 @@ void aprilslam::aprilslamcpp::initializeFirstPose(const gtsam::Pose3& poseSE3, g
     ROS_INFO("First pose initialized at origin");
 }
 
-// ============ 3D SLAM: Predict next pose with Pose3 ============
+// ============ Predict next pose (can be improved with dynamics model) ============
 gtsam::Pose3 aprilslam::aprilslamcpp::predictNextPose(const gtsam::Pose3& poseSE3) {
     gtsam::Pose3 odometry = lastPoseSE3_.between(poseSE3);
     return lastPose_.compose(odometry);
 }
 
-// ============ 3D SLAM: Update graph with 3D landmarks ============
+// ============ Update graph with landmarks ============
 std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
     std::set<gtsam::Symbol> detectedLandmarksCurrentPos, 
     const std::pair<std::vector<int>, std::vector<Eigen::Vector3d>>& detections) {
@@ -461,7 +461,7 @@ std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
     return detectedLandmarksCurrentPos;
 }
 
-// ============ 3D SLAM: Main odometry callback ============
+// ============ Main odometry callback ============
 void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& msg) {
     // Convert odometry message to Pose3
     gtsam::Pose3 poseSE3 = translateOdomMsg(msg);
