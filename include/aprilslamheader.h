@@ -42,6 +42,12 @@ namespace aprilslam {
 
 class aprilslamcpp {
 public:
+    struct PoleConstraint {
+    int tag_id_1;
+    int tag_id_2;
+    double distance;  // Known distance between tags
+    };
+
     explicit aprilslamcpp(ros::NodeHandle node_handle); // Constructor
     ~aprilslamcpp(); // Destructor
     void initializeGTSAM(); // Method to initialize GTSAM components
