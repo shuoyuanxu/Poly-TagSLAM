@@ -1,6 +1,5 @@
 odom_topic: "/lio_sam/mapping/odometry"
 robot_frame: "base_link"  # lboro data
-# robot_frame: "base_link"  # antobot data
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
 pathtosavelandmarkcsv: "config/afteroptimisation.csv"
@@ -42,30 +41,6 @@ noise_models:
     - 1.2
     - 1.2
     - 2.0    # z much more uncertain
-
-# Camera configuration
-# camera_config:
-#   cameras:
-#     - name: lCam
-#       topic: "/l/tag_detections"
-#       frame: "usb_cam_l"
-#     - name: rCam
-#       topic: "/r/tag_detections"
-#       frame: "usb_cam_r"
-#     - name: mCam
-#       topic: "/m/tag_detections"
-#       frame: "usb_cam_m"
-
-# camera_config:
-#   cameras:
-#     - name: picam1
-#       topic: "/antobot/picam1/tag_detections"
-#       frame: "picam1"
-#       transform: [0, 0, 0.39]
-#     - name: picam2
-#       topic: "/antobot/picam2/tag_detections"
-#       frame: "picam2"
-#       transform: [0, 0, -0.39]
 
 camera_config:
   cameras:
