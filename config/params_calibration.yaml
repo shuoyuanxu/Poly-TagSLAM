@@ -10,6 +10,8 @@ batch_optimisation: true
 total_tags: 1000
 add2graph_threshold: 0.2
 inactivity_threshold: 30.0
+use_pole_constraints: true
+pole_constraints_file: "config/pole_constraints.csv"
 
 # Stationary threshold
 stationary_position_threshold: 0.05 # 5cm

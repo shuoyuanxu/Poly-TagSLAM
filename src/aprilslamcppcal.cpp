@@ -41,6 +41,45 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     pathtoloadlandmarkcsv = package_path + "/" + load_path;
     nh_.getParam("savetaglocation", savetaglocation);
     nh_.getParam("usepriortagtable", usepriortagtable);
+    
+    // Read geo-constraints between landmarks
+    nh_.getParam("use_pole_constraints", use_pole_constraints_);
+
+    if (use_pole_constraints_) {
+        std::string pole_constraints_file;
+        nh_.getParam("pole_constraints_file", pole_constraints_file);
+        pole_constraints_path_ = package_path + "/" + pole_constraints_file;
+        
+        // Load the constraints from CSV
+        pole_constraints_ = loadPoleConstraints(pole_constraints_path_);
+        ROS_INFO("Loaded %zu pole constraints from: %s", 
+                pole_constraints_.size(), pole_constraints_path_.c_str());
+        
+        // Load pole constraint noise model
+        double pole_constraint_sigma;
+        nh_.getParam("pole_constraint_noise", pole_constraint_sigma);
+        poleConstraintNoise = gtsam::noiseModel::Isotropic::Sigma(1, pole_constraint_sigma);
+        
+        ROS_INFO("Pole constraint noise: %.4f m", pole_constraint_sigma);
+        
+        // Print some statistics
+        if (!pole_constraints_.empty()) {
+            double min_dist = pole_constraints_[0].distance;
+            double max_dist = pole_constraints_[0].distance;
+            double sum_dist = 0.0;
+            
+            for (const auto& pc : pole_constraints_) {
+                min_dist = std::min(min_dist, pc.distance);
+                max_dist = std::max(max_dist, pc.distance);
+                sum_dist += pc.distance;
+            }
+            
+            ROS_INFO("Pole constraint distances: min=%.4f, max=%.4f, avg=%.4f m",
+                    min_dist, max_dist, sum_dist / pole_constraints_.size());
+        }
+    } else {
+        ROS_INFO("Pole constraints disabled");
+    }
 
     // ============ Camera info with full Pose3 transforms ============
     if (nh_.getParam("camera_config/cameras", camera_list) && 
@@ -248,6 +287,61 @@ aprilslamcpp::~aprilslamcpp() {
     
     optimizationExecuted_ = true;
     ROS_INFO("SAMOptimise() executed successfully. Shutdown complete.");
+}
+
+// loading geo-constraint from a given csv with header:
+// constraint_id	tag_id_1	tag_id_2	distance
+std::vector<aprilslamcpp::PoleConstraint> aprilslamcpp::loadPoleConstraints(const std::string& filepath) {
+    
+    std::vector<PoleConstraint> constraints;
+    std::ifstream file(filepath);
+    
+    if (!file.is_open()) {
+        ROS_ERROR("Failed to open pole constraints file: %s", filepath.c_str());
+        return constraints;
+    }
+    
+    std::string line;
+    // Skip header line
+    std::getline(file, line);
+    
+    int line_number = 1;
+    while (std::getline(file, line)) {
+        line_number++;
+        
+        // Skip empty lines
+        if (line.empty()) continue;
+        
+        std::stringstream ss(line);
+        std::string token;
+        PoleConstraint pc;
+        
+        try {
+            // Parse: constraint_id,tag_id_1,tag_id_2,distance
+            std::getline(ss, token, ',');
+            pc.constraint_id = std::stoi(token);
+            
+            std::getline(ss, token, ',');
+            pc.tag_id_1 = std::stoi(token);
+            
+            std::getline(ss, token, ',');
+            pc.tag_id_2 = std::stoi(token);
+            
+            std::getline(ss, token, ',');
+            pc.distance = std::stod(token);
+            
+            constraints.push_back(pc);
+            
+        } catch (const std::exception& e) {
+            ROS_WARN("Failed to parse line %d in pole constraints file: %s", 
+                     line_number, e.what());
+            continue;
+        }
+    }
+    
+    file.close();
+    ROS_INFO("Successfully parsed %zu pole constraints from CSV", constraints.size());
+    return constraints;
 }
 
 // Callback function for camera topics

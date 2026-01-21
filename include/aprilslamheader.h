@@ -42,11 +42,16 @@ namespace aprilslam {
 
 class aprilslamcpp {
 public:
+    // Pole geo-constraint definition
     struct PoleConstraint {
-    int tag_id_1;
-    int tag_id_2;
-    double distance;  // Known distance between tags
+        int constraint_id;
+        int tag_id_1;
+        int tag_id_2;
+        double distance;
     };
+
+    // Function to load pole constraints from a given csv file
+    std::vector<PoleConstraint> loadPoleConstraints(const std::string& filepath);
 
     explicit aprilslamcpp(ros::NodeHandle node_handle); // Constructor
     ~aprilslamcpp(); // Destructor
@@ -89,6 +94,13 @@ public:
                            tf2::Transform& out_tf);
                            
 private:
+    // Pole geo-constraint variables
+    std::vector<PoleConstraint> pole_constraints_;
+    std::set<int> pole_constraints_added_;  // Track which constraints have been added
+    gtsam::noiseModel::Isotropic::shared_ptr poleConstraintNoise;
+    bool use_pole_constraints_;
+    std::string pole_constraints_path_;
+
     ros::Timer check_data_timer_;
     ros::Publisher path_pub_;
     ros::Publisher odom_traj_pub_;
