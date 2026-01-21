@@ -12,6 +12,8 @@ add2graph_threshold: 0.2
 inactivity_threshold: 30.0
 use_pole_constraints: true
 pole_constraints_file: "config/pole_constraints.csv"
+pole_constraint_noise: 0.1  # Standard deviation for pole constraints
+
 
 # Stationary threshold
 stationary_position_threshold: 0.05 # 5cm
