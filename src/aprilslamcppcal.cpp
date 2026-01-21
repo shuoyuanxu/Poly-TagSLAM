@@ -258,6 +258,14 @@ aprilslamcpp::~aprilslamcpp() {
         saveLandmarksToCSV(landmarks_unoptimised, pathtoloadlandmarkcsv);
     }
     
+    // Add pole constraints if enabled
+    if (use_pole_constraints_) {
+        ROS_INFO("Adding pole constraints before final optimization...");
+        addPoleConstraintFactors();
+        ROS_INFO("Added %zu/%zu pole constraints to the graph", 
+                 pole_constraints_added_.size(), pole_constraints_.size());
+    }
+
     // Perform final optimization
     ROS_INFO("Running final batch optimization...");
     gtsam::Values result = SAMOptimise();
@@ -289,7 +297,7 @@ aprilslamcpp::~aprilslamcpp() {
     ROS_INFO("SAMOptimise() executed successfully. Shutdown complete.");
 }
 
-// loading geo-constraint from a given csv with header:
+// =============== loading geo-constraint from a given csv with header: ===============
 // constraint_id	tag_id_1	tag_id_2	distance
 std::vector<aprilslamcpp::PoleConstraint> aprilslamcpp::loadPoleConstraints(const std::string& filepath) {
     
@@ -342,6 +350,47 @@ std::vector<aprilslamcpp::PoleConstraint> aprilslamcpp::loadPoleConstraints(cons
     file.close();
     ROS_INFO("Successfully parsed %zu pole constraints from CSV", constraints.size());
     return constraints;
+}
+
+// ============ Add pole constraint factors to the graph ============
+// For mapping, run it once before optimisation
+void aprilslam::aprilslamcpp::addPoleConstraintFactors() {
+    if (!use_pole_constraints_) return;
+    
+    int constraints_added_this_call = 0;
+    
+    for (const auto& pc : pole_constraints_) {
+        // Check if we've already added this constraint
+        if (pole_constraints_added_.find(pc.constraint_id) != pole_constraints_added_.end()) {
+            continue;
+        }
+        
+        gtsam::Symbol L1('L', pc.tag_id_1);
+        gtsam::Symbol L2('L', pc.tag_id_2);
+        
+        // Only add constraint if both landmarks exist in the estimates
+        if (keyframeEstimates_.exists(L1) && keyframeEstimates_.exists(L2)) {
+            
+            // Add RangeFactor to constrain the distance between the two landmarks
+            gtsam::RangeFactor<gtsam::Point3, gtsam::Point3> rangeFactor(
+                L1, L2, pc.distance, poleConstraintNoise
+            );
+            
+            keyframeGraph_.add(rangeFactor);
+            pole_constraints_added_.insert(pc.constraint_id);
+            constraints_added_this_call++;
+            
+            ROS_DEBUG("Added pole constraint %d: L%d <-> L%d (distance: %.4f m)",
+                     pc.constraint_id, pc.tag_id_1, pc.tag_id_2, pc.distance);
+        }
+    }
+    
+    if (constraints_added_this_call > 0) {
+        ROS_INFO("Added %d new pole constraints (total: %zu/%zu)",
+                 constraints_added_this_call, 
+                 pole_constraints_added_.size(),
+                 pole_constraints_.size());
+    }
 }
 
 // Callback function for camera topics

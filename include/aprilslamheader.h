@@ -9,6 +9,7 @@
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/sam/RangeFactor.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/sam/BearingRangeFactor.h>
@@ -52,6 +53,7 @@ public:
 
     // Function to load pole constraints from a given csv file
     std::vector<PoleConstraint> loadPoleConstraints(const std::string& filepath);
+    void addPoleConstraintFactors();
 
     explicit aprilslamcpp(ros::NodeHandle node_handle); // Constructor
     ~aprilslamcpp(); // Destructor
