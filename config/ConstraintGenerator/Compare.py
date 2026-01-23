@@ -95,7 +95,7 @@ def create_correspondences(lio_sam_df, total_station_df, manual_correspondences=
 
 def compute_transformation_3d(source_points, target_points):
     """
-    Compute 3D similarity transformation (rotation, translation, scale) from source to target
+    Compute 3D rigid transformation (rotation, translation, NO scale) from source to target
     
     Args:
         source_points: Nx3 array of source coordinates
@@ -104,7 +104,7 @@ def compute_transformation_3d(source_points, target_points):
     Returns:
         rotation_matrix: 3x3 rotation matrix
         translation: 3x1 translation vector
-        scale: scalar scale factor
+        scale: scalar scale factor (fixed at 1.0)
     """
     # Center the points
     source_center = np.mean(source_points, axis=0)
@@ -113,17 +113,8 @@ def compute_transformation_3d(source_points, target_points):
     source_centered = source_points - source_center
     target_centered = target_points - target_center
     
-    # Compute scale
-    source_scale = np.sqrt(np.sum(source_centered**2) / len(source_points))
-    target_scale = np.sqrt(np.sum(target_centered**2) / len(target_points))
-    scale = target_scale / source_scale
-    
-    # Normalize
-    source_normalized = source_centered / source_scale
-    target_normalized = target_centered / target_scale
-    
-    # Compute rotation using SVD
-    H = source_normalized.T @ target_normalized
+    # Compute rotation using SVD (without normalization for rigid transform)
+    H = source_centered.T @ target_centered
     U, _, Vt = np.linalg.svd(H)
     R = Vt.T @ U.T
     
@@ -132,9 +123,12 @@ def compute_transformation_3d(source_points, target_points):
         Vt[-1, :] *= -1
         R = Vt.T @ U.T
     
-    # Compute translation
-    translation = target_center - scale * R @ source_center
-    scale = 1
+    # Compute translation (without scale)
+    translation = target_center - R @ source_center
+    
+    # Set scale to 1.0 (no scaling - rigid transformation only)
+    scale = 1.0
+    
     return R, translation, scale
 
 def transform_points(points, R, t, s):
@@ -167,7 +161,7 @@ def main():
     # ============ CONFIGURATION ============
     
     # File paths - MODIFY THESE
-    lio_sam_file = 'afteroptimisationwconstraint.csv'
+    lio_sam_file = 'afteroptimisation.csv'
     total_station_file = 'TotalStation.csv'
     
     # Label display options
@@ -180,10 +174,6 @@ def main():
     enable_outlier_filtering = True  # Enable outlier removal
     outlier_threshold = 2.0          # Distance threshold in meters
     max_iterations = 20               # Maximum refinement iterations
-    
-    # 3D plotting options
-    view_elevation = 20  # Elevation angle for 3D plot (degrees)
-    view_azimuth = 45    # Azimuth angle for 3D plot (degrees)
     
     # ======================================
     
@@ -348,22 +338,22 @@ def main():
         print(f"  Mean: {np.mean(val_errors):.4f} m")
         print(f"  Max:  {np.max(val_errors):.4f} m")
     
-    # Create figure with 3D plot
-    fig = plt.figure(figsize=(16, 12))
+    # Create figure with single 2D plot (East-North view)
+    fig = plt.figure(figsize=(14, 12))
+    ax = fig.add_subplot(111)
     
-    # 3D plot
-    ax1 = fig.add_subplot(221, projection='3d')
-    
-    # Plot transformed LIO_SAM and Total Station
-    ax1.scatter(lio_transformed[:, 0], lio_transformed[:, 1], lio_transformed[:, 2],
+    # Plot all transformed LIO_SAM points
+    ax.scatter(lio_transformed[:, 0], lio_transformed[:, 1],
                 c='blue', marker='o', s=50, alpha=0.6, label='LIO_Tag (transformed)')
-    ax1.scatter(total_station_df['X (East)'], total_station_df['Y (North)'], total_station_df['Z'],
+    
+    # Plot all Total Station points
+    ax.scatter(total_station_df['X (East)'], total_station_df['Y (North)'],
                 c='red', marker='s', s=100, alpha=0.6, label='Total Station')
     
     # Add LIO_SAM ID labels for all transformed points
     if show_lio_labels:
         for idx, row in lio_sam_df.iterrows():
-            ax1.text(lio_transformed[idx, 0], lio_transformed[idx, 1], lio_transformed[idx, 2],
+            ax.text(lio_transformed[idx, 0], lio_transformed[idx, 1],
                     str(int(row['id'])), 
                     fontsize=lio_label_fontsize, ha='center', va='center',
                     color='darkblue', fontweight='bold')
@@ -371,13 +361,13 @@ def main():
     # Add Total Station point name labels
     if show_ts_labels:
         for _, row in total_station_df.iterrows():
-            ax1.text(row['X (East)'], row['Y (North)'], row['Z'], row['Point Name'],
+            ax.text(row['X (East)'], row['Y (North)'], row['Point Name'],
                     fontsize=ts_label_fontsize, ha='center', va='bottom',
                     color='darkred', fontweight='bold')
     
     # Highlight registration points
     reg_lio_transformed = transform_points(lio_reg_points, R, t, s)
-    ax1.scatter(reg_lio_transformed[:, 0], reg_lio_transformed[:, 1], reg_lio_transformed[:, 2],
+    ax.scatter(reg_lio_transformed[:, 0], reg_lio_transformed[:, 1],
                 c='cyan', marker='o', s=200, alpha=0.8,
                 edgecolors='black', linewidths=2, label='Registration points')
     
@@ -386,132 +376,49 @@ def main():
         _, row_data = row
         lio_idx = lio_sam_df[lio_sam_df['id'] == row_data['lio_id']].index[0]
         transformed_point = lio_transformed[lio_idx]
-        ts_point = [row_data['ts_x'], row_data['ts_y'], row_data['ts_z']]
+        ts_point = [row_data['ts_x'], row_data['ts_y']]
         
         color = 'green' if i < n_registration_points else 'orange'
-        ax1.plot([transformed_point[0], ts_point[0]],
+        label = 'Registration errors' if i == 0 else ('Validation errors' if i == n_registration_points else '')
+        ax.plot([transformed_point[0], ts_point[0]],
                 [transformed_point[1], ts_point[1]],
-                [transformed_point[2], ts_point[2]],
-                color=color, alpha=0.5, linewidth=2)
+                color=color, alpha=0.5, linewidth=2, label=label)
     
     # Draw outliers if any
     if outliers_removed and enable_outlier_filtering:
         all_outliers = pd.concat(outliers_removed)
-        for idx, row_data in all_outliers.iterrows():
+        for i, (idx, row_data) in enumerate(all_outliers.iterrows()):
             lio_idx = lio_sam_df[lio_sam_df['id'] == row_data['lio_id']].index[0]
             transformed_point = lio_transformed[lio_idx]
-            ts_point = [row_data['ts_x'], row_data['ts_y'], row_data['ts_z']]
+            ts_point = [row_data['ts_x'], row_data['ts_y']]
             
             # Draw outlier line in red with dashed style
-            ax1.plot([transformed_point[0], ts_point[0]],
+            ax.plot([transformed_point[0], ts_point[0]],
                     [transformed_point[1], ts_point[1]],
-                    [transformed_point[2], ts_point[2]],
-                    color='red', alpha=0.7, linewidth=2, linestyle='--')
+                    color='red', alpha=0.7, linewidth=2, linestyle='--',
+                    label='Outlier errors' if i == 0 else '')
             
             # Mark outlier points with X
-            ax1.scatter(transformed_point[0], transformed_point[1], transformed_point[2],
+            ax.scatter(transformed_point[0], transformed_point[1],
                       c='red', marker='x', s=200, linewidths=3,
-                      label='Outliers' if idx == all_outliers.index[0] else '')
+                      label='Outliers' if i == 0 else '')
     
-    ax1.set_xlabel('X (East) [m]')
-    ax1.set_ylabel('Y (North) [m]')
-    ax1.set_zlabel('Z (Up) [m]')
-    title = '3D Landmark Comparison - Transformed to Total Station Coordinates'
+    ax.set_xlabel('X (East) [m]', fontsize=12)
+    ax.set_ylabel('Y (North) [m]', fontsize=12)
+    
+    # Create title with outlier information if applicable
+    title = '2D Landmark Comparison - Transformed to Total Station Coordinates (East-North View)'
     if outliers_removed and enable_outlier_filtering:
         title += f'\n({len(pd.concat(outliers_removed))} outlier(s) removed, threshold={outlier_threshold}m)'
-    ax1.set_title(title)
-    ax1.legend()
-    ax1.view_init(elev=view_elevation, azim=view_azimuth)
+    ax.set_title(title, fontsize=14, fontweight='bold')
     
-    # XY plane view (top-down)
-    ax2 = fig.add_subplot(222)
-    ax2.scatter(lio_transformed[:, 0], lio_transformed[:, 1],
-                c='blue', marker='o', s=50, alpha=0.6, label='LIO_Tag (transformed)')
-    ax2.scatter(total_station_df['X (East)'], total_station_df['Y (North)'],
-                c='red', marker='s', s=100, alpha=0.6, label='Total Station')
-    
-    # Labels for XY view
-    if show_lio_labels:
-        for idx, row in lio_sam_df.iterrows():
-            ax2.text(lio_transformed[idx, 0], lio_transformed[idx, 1],
-                    str(int(row['id'])), 
-                    fontsize=lio_label_fontsize, ha='center', va='center',
-                    color='darkblue', fontweight='bold')
-    if show_ts_labels:
-        for _, row in total_station_df.iterrows():
-            ax2.text(row['X (East)'], row['Y (North)'], row['Point Name'],
-                    fontsize=ts_label_fontsize, ha='center', va='bottom',
-                    color='darkred', fontweight='bold')
-    
-    # Error vectors for XY view
-    for i, row in enumerate(matched_df_filtered.iterrows()):
-        _, row_data = row
-        lio_idx = lio_sam_df[lio_sam_df['id'] == row_data['lio_id']].index[0]
-        transformed_point = lio_transformed[lio_idx]
-        ts_point = [row_data['ts_x'], row_data['ts_y']]
-        color = 'green' if i < n_registration_points else 'orange'
-        ax2.plot([transformed_point[0], ts_point[0]],
-                [transformed_point[1], ts_point[1]],
-                color=color, alpha=0.5, linewidth=2)
-    
-    ax2.set_xlabel('X (East) [m]')
-    ax2.set_ylabel('Y (North) [m]')
-    ax2.set_title('XY Plane View (Top-Down)')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    ax2.axis('equal')
-    
-    # XZ plane view (side view)
-    ax3 = fig.add_subplot(223)
-    ax3.scatter(lio_transformed[:, 0], lio_transformed[:, 2],
-                c='blue', marker='o', s=50, alpha=0.6, label='LIO_Tag (transformed)')
-    ax3.scatter(total_station_df['X (East)'], total_station_df['Z'],
-                c='red', marker='s', s=100, alpha=0.6, label='Total Station')
-    
-    for i, row in enumerate(matched_df_filtered.iterrows()):
-        _, row_data = row
-        lio_idx = lio_sam_df[lio_sam_df['id'] == row_data['lio_id']].index[0]
-        transformed_point = lio_transformed[lio_idx]
-        ts_point = [row_data['ts_x'], row_data['ts_z']]
-        color = 'green' if i < n_registration_points else 'orange'
-        ax3.plot([transformed_point[0], ts_point[0]],
-                [transformed_point[2], ts_point[1]],
-                color=color, alpha=0.5, linewidth=2)
-    
-    ax3.set_xlabel('X (East) [m]')
-    ax3.set_ylabel('Z (Up) [m]')
-    ax3.set_title('XZ Plane View (Side View)')
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-    ax3.axis('equal')
-    
-    # YZ plane view (side view)
-    ax4 = fig.add_subplot(224)
-    ax4.scatter(lio_transformed[:, 1], lio_transformed[:, 2],
-                c='blue', marker='o', s=50, alpha=0.6, label='LIO_Tag (transformed)')
-    ax4.scatter(total_station_df['Y (North)'], total_station_df['Z'],
-                c='red', marker='s', s=100, alpha=0.6, label='Total Station')
-    
-    for i, row in enumerate(matched_df_filtered.iterrows()):
-        _, row_data = row
-        lio_idx = lio_sam_df[lio_sam_df['id'] == row_data['lio_id']].index[0]
-        transformed_point = lio_transformed[lio_idx]
-        ts_point = [row_data['ts_y'], row_data['ts_z']]
-        color = 'green' if i < n_registration_points else 'orange'
-        ax4.plot([transformed_point[1], ts_point[0]],
-                [transformed_point[2], ts_point[1]],
-                color=color, alpha=0.5, linewidth=2)
-    
-    ax4.set_xlabel('Y (North) [m]')
-    ax4.set_ylabel('Z (Up) [m]')
-    ax4.set_title('YZ Plane View (Side View)')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    ax4.axis('equal')
+    ax.legend(loc='best', fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.axis('equal')
     
     plt.tight_layout()
-    plt.savefig('landmark_comparison_3d.png', dpi=300, bbox_inches='tight')
-    print("\nPlot saved as 'landmark_comparison_3d.png'")
+    plt.savefig('landmark_comparison_2d.png', dpi=300, bbox_inches='tight')
+    print("\nPlot saved as 'landmark_comparison_2d.png'")
     plt.show()
     
     # Save transformed LIO_SAM data
@@ -526,7 +433,7 @@ def main():
     print(f"\n{'='*60}")
     print("TRANSFORMATION SUMMARY")
     print(f"{'='*60}")
-    print(f"Scale factor: {s:.4f}")
+    print(f"Scale factor: {s:.4f} (rigid transformation - no scaling)")
     print(f"Rotation (Euler angles):")
     print(f"  Roll:  {roll:.2f}°")
     print(f"  Pitch: {pitch:.2f}°")

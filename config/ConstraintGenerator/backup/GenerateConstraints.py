@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 
 # Read the ground truth landmark locations
-df = pd.read_csv('ground_truth.csv')
+df = pd.read_csv('ground_truth_all.csv')
 
 print(f"Loaded {len(df)} landmarks")
 
