@@ -694,7 +694,7 @@ def main():
     # ============ CONFIGURATION ============
     
     # File paths - MODIFY THESE
-    lio_sam_file = 'LioNovmapping.csv'
+    lio_sam_file = 'DlojuneMapping.csv'
     total_station_file = 'TotalStation_idfixed.csv'
     
     # Analysis mode: '2d', '3d', or 'both'
