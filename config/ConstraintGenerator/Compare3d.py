@@ -162,7 +162,7 @@ def main():
     
     # File paths - MODIFY THESE
     lio_sam_file = 'afteroptimisation.csv'
-    total_station_file = 'TotalStation.csv'
+    total_station_file = 'TotalStation_idfixed.csv'
     
     # Label display options
     show_lio_labels = True  # Show LIO_SAM ID labels
