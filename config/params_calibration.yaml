@@ -16,6 +16,11 @@ use_pole_constraints: true
 pole_constraints_file: "config/pole_constraints.csv"
 pole_constraint_noise: 0.1  # Standard deviation for pole constraints
 
+# Enforcing Survey Data
+path_to_survey_landmarks: "config/TotalStation.csv"
+use_survey_landmarks: true
+survey_landmark_noise: 0.01  # Much tighter than regular point_noise
+survey_landmark_prefix: "a"  # Only load tags starting with 'a'
 
 # Stationary threshold
 stationary_position_threshold: 0.05 # 5cm
