@@ -94,6 +94,9 @@ public:
     bool getStaticTransform(const std::string& target_frame,
                            const std::string& source_frame,
                            tf2::Transform& out_tf);
+                        
+    std::map<int, gtsam::Point3> loadSurveyLandmarks(const std::string& filepath, 
+                                                   const std::string& prefix);
                            
 private:
     // Pole geo-constraint variables
@@ -246,8 +249,13 @@ private:
     gtsam::Pose3 lastPose_for_jump;
     bool useoutlierremoval;
     bool usetrajsmoothing;
-};
 
+    // For survey data ingestion
+    bool use_survey_landmarks_;
+    std::string survey_landmarks_path_;
+    double survey_noise_sigma;
+    gtsam::noiseModel::Diagonal::shared_ptr surveyLandmarkNoise;        
+};
 } 
 
 #endif // aprilslamcpp

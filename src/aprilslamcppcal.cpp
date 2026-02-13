@@ -198,6 +198,19 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     double inactivity_threshold;
     nh_.getParam("inactivity_threshold", inactivity_threshold);
 
+    // Survey landmark settings
+    nh_.getParam("use_survey_landmarks", use_survey_landmarks_);
+
+    if (use_survey_landmarks_) {
+        nh_.getParam("path_to_survey_landmarks", survey_landmarks_path_);
+        survey_landmarks_path_ = package_path + "/" + survey_landmarks_path_;
+        
+        nh_.getParam("survey_landmark_noise", survey_noise_sigma);
+        surveyLandmarkNoise = gtsam::noiseModel::Isotropic::Sigma(3, survey_noise_sigma);
+        
+        ROS_INFO("Survey landmark noise: %.4f m", survey_noise_sigma);
+    }
+
     // Initialize GTSAM components
     initializeGTSAM();
     // Index to keep track of the sequential pose
@@ -352,6 +365,99 @@ std::vector<aprilslamcpp::PoleConstraint> aprilslamcpp::loadPoleConstraints(cons
     return constraints;
 }
 
+// =============== loading total station survey landmarks from a given csv: ===============
+// Headear: "Point Name","X (East)","Y (North)","Z (Elevation)"
+std::map<int, gtsam::Point3> aprilslamcpp::loadSurveyLandmarks(
+    const std::string& filepath, 
+    const std::string& prefix) {
+    
+    std::map<int, gtsam::Point3> landmarks;
+    std::ifstream file(filepath);
+    
+    if (!file.is_open()) {
+        ROS_ERROR("Failed to open survey landmarks file: %s", filepath.c_str());
+        return landmarks;
+    }
+    
+    std::string line;
+    // Skip header line
+    if (!std::getline(file, line)) {
+        ROS_ERROR("Empty file or cannot read header");
+        return landmarks;
+    }
+    
+    ROS_INFO("Header: %s", line.c_str());
+    
+    int line_number = 1;
+    while (std::getline(file, line)) {
+        line_number++;
+        
+        // Remove any trailing whitespace/carriage returns
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        
+        if (line.empty()) continue;
+        
+        // Split by commas (CSV format)
+        std::vector<std::string> tokens;
+        std::stringstream ss(line);
+        std::string token;
+        
+        while (std::getline(ss, token, ',')) {  // <-- Changed from '\t' to ','
+            // Remove quotes and trim whitespace
+            token.erase(std::remove(token.begin(), token.end(), '\"'), token.end());  // <-- Remove quotes
+            token.erase(0, token.find_first_not_of(" \t\r\n"));
+            token.erase(token.find_last_not_of(" \t\r\n") + 1);
+            tokens.push_back(token);
+        }
+        
+        if (tokens.size() < 4) {
+            ROS_WARN("Line %d has only %zu tokens (expected 4)", line_number, tokens.size());
+            continue;
+        }
+        
+        std::string point_name = tokens[0];
+        
+        try {
+            // Check prefix
+            if (point_name.length() < prefix.length() || 
+                point_name.substr(0, prefix.length()) != prefix) {
+                ROS_DEBUG("Skipping '%s' (doesn't match prefix '%s')", 
+                         point_name.c_str(), prefix.c_str());
+                continue;
+            }
+            
+            // Extract tag number
+            std::string number_str = point_name.substr(prefix.length());
+            int tag_id = std::stoi(number_str);
+            
+            // Parse coordinates
+            double x = std::stod(tokens[1]);
+            double y = std::stod(tokens[2]);
+            double z = std::stod(tokens[3]);
+            
+            gtsam::Point3 point(x, y, z);
+            landmarks[tag_id] = point;
+            
+            ROS_INFO("Loaded survey landmark L%d (%s): (%.3f, %.3f, %.3f)", 
+                     tag_id, point_name.c_str(), x, y, z);
+            
+        } catch (const std::exception& e) {
+            ROS_WARN("Failed to parse line %d: %s. Tokens: [%s, %s, %s, %s]", 
+                     line_number, e.what(), 
+                     tokens.size() > 0 ? tokens[0].c_str() : "",
+                     tokens.size() > 1 ? tokens[1].c_str() : "",
+                     tokens.size() > 2 ? tokens[2].c_str() : "",
+                     tokens.size() > 3 ? tokens[3].c_str() : "");
+            continue;
+        }
+    }
+    
+    file.close();
+    ROS_INFO("Successfully loaded %zu survey landmarks with prefix '%s'", 
+             landmarks.size(), prefix.c_str());
+    return landmarks;
+}
+
 // ============ Add pole constraint factors to the graph ============
 // For mapping, run it once before optimisation
 void aprilslam::aprilslamcpp::addPoleConstraintFactors() {
@@ -482,6 +588,32 @@ void aprilslam::aprilslamcpp::initializeFirstPose(const gtsam::Pose3& poseSE3, g
     keyframeEstimates_.insert(gtsam::Symbol('X', 1), pose0);
     Estimates_visulisation.insert(gtsam::Symbol('X', 1), pose0);
     lastPose_ = pose0;
+    
+    // Load survey-grade landmarks FIRST (highest priority)
+    if (use_survey_landmarks_) {
+        ROS_INFO("Loading survey-grade landmarks from: %s", survey_landmarks_path_.c_str());
+        std::string prefix;
+        nh_.getParam("survey_landmark_prefix", prefix);
+        
+        std::map<int, gtsam::Point3> surveyLandmarks = loadSurveyLandmarks(survey_landmarks_path_, prefix);
+        ROS_INFO("Loaded %zu survey-grade landmarks", surveyLandmarks.size());
+        
+        for (const auto& landmark : surveyLandmarks) {
+            gtsam::Symbol landmarkKey('L', landmark.first);
+            
+            // Add VERY tight prior for survey landmarks
+            keyframeGraph_.add(gtsam::PriorFactor<gtsam::Point3>(landmarkKey, landmark.second, surveyLandmarkNoise));
+            keyframeEstimates_.insert(landmarkKey, landmark.second);
+            landmarkEstimates.insert(landmarkKey, landmark.second);
+            
+            // Mark as historically detected so we add bearing-range factors
+            detectedLandmarksHistoric.insert(landmarkKey);
+            
+            ROS_INFO("Added survey prior for L%d at (%.3f, %.3f, %.3f)", 
+                     landmark.first, landmark.second.x(), 
+                     landmark.second.y(), landmark.second.z());
+        }
+    }
     
     // Load calibrated landmarks as priors if available
     if (usepriortagtable) {
