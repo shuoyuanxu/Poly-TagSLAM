@@ -18,7 +18,7 @@ pole_constraint_noise: 0.1  # Standard deviation for pole constraints
 
 # Enforcing Survey Data
 path_to_survey_landmarks: "config/TotalStation_to_LIO_3D.csv"
-use_survey_landmarks: true
+use_survey_landmarks: false
 survey_landmark_noise: 0.01  # Much tighter than regular point_noise
 survey_landmark_prefix: "a"  # Only load tags starting with 'a'
 

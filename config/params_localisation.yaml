@@ -1,6 +1,9 @@
-odom_topic: "robot/dlo/odom_node/odom"
-odom_frame: "robot/odom"  # lboro data
-robot_frame: "robot/base_link"  # lboro data
+# odom_topic: "robot/dlo/odom_node/odom"
+# odom_frame: "robot/odom"  # lboro data
+# robot_frame: "robot/base_link"  # lboro data
+odom_topic: "/lio_sam/mapping/odometry"
+robot_frame: "base_link"  # lboro data
+odom_frame: "odom"  # lboro data
 # odom_frame: "odom"  # antobot data
 # robot_frame: "base_link"  # antobot data
 trajectory_topic: "trajectory"
@@ -80,17 +83,17 @@ smoothingwindow: 5
 
 # Camera configuration
 # Camera configuration
-camera_config:
-  cameras:
-    - name: lCam
-      topic: "/l/tag_detections"
-      frame: "usb_cam_l"
-    - name: rCam
-      topic: "/r/tag_detections"
-      frame: "usb_cam_r"
-    - name: mCam
-      topic: "/m/tag_detections"
-      frame: "usb_cam_m"
+# camera_config:
+#   cameras:
+#     - name: lCam
+#       topic: "/l/tag_detections"
+#       frame: "usb_cam_l"
+#     - name: rCam
+#       topic: "/r/tag_detections"
+#       frame: "usb_cam_r"
+#     - name: mCam
+#       topic: "/m/tag_detections"
+#       frame: "usb_cam_m"
 
 # camera_config:
 #   cameras:
@@ -111,3 +114,12 @@ camera_config:
 #     - name: rCam
 #       topic: "/right/tag_detections"
 #       frame: "right_cam"
+
+camera_config:
+  cameras:
+    - name: forwardLeftCam
+      topic: "/forwardLeft/tag_detections"
+      frame: "forwardLeft_cam"
+    - name: forwardRightCam
+      topic: "/forwardRight/tag_detections"
+      frame: "forwardRight_cam"

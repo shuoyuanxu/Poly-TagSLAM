@@ -431,9 +431,9 @@ std::map<int, gtsam::Point3> aprilslamcpp::loadSurveyLandmarks(
             int tag_id = std::stoi(number_str);
             
             // Parse coordinates
-            double x = std::stod(tokens[1]);
-            double y = std::stod(tokens[2]);
-            double z = std::stod(tokens[3]);
+            double x = std::stod(tokens[5]);
+            double y = std::stod(tokens[6]);
+            double z = std::stod(tokens[7]);
             
             gtsam::Point3 point(x, y, z);
             landmarks[tag_id] = point;
