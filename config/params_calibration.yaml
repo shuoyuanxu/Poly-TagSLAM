@@ -11,7 +11,7 @@ usepriortagtable: false
 batch_optimisation: true
 total_tags: 1000
 add2graph_threshold: 0.2
-inactivity_threshold: 30.0
+inactivity_threshold: 5.0
 use_pole_constraints: true
 pole_constraints_file: "config/pole_constraints.csv"
 pole_constraint_noise: 0.1  # Standard deviation for pole constraints

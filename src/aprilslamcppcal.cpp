@@ -707,9 +707,6 @@ std::set<gtsam::Symbol> aprilslam::aprilslamcpp::updateGraphWithLandmarks(
                     keyframeGraph_.add(gtsam::PriorFactor<gtsam::Point3>(
                         landmarkKey, priorLand, pointNoise)
                     );
-                    
-                    ROS_INFO("New landmark L%d detected at (%.2f, %.2f, %.2f)", 
-                            tag_number, priorLand.x(), priorLand.y(), priorLand.z());
                 }
                 
                 // Add bearing-range observation
@@ -804,9 +801,6 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
         saveLandmarksToCSV(landmarks, pathtosavelandmarkcsv);
     }
     
-    if (index_of_pose % 50 == 0) {
-        ROS_INFO("Processed %d poses, tracking %zu landmarks", index_of_pose, landmarks.size());
-    }
 }
 }
 
