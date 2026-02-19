@@ -153,8 +153,8 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("smoothingStartIndex_", smoothingStartIndex_);
 
     // Save localisation result
-    refined_odom_csv.open("/home/shuoyuan/catkin_aereh_ws/src/aprilslamcpp/refined_odometry.csv", std::ios::out);
-    raw_odom_csv.open("/home/shuoyuan/catkin_aereh_ws/src/aprilslamcpp/raw_odometry.csv", std::ios::out);
+    refined_odom_csv.open(package_path + "/refined_odometry.csv", std::ios::out);
+    raw_odom_csv.open(package_path + "/raw_odometry.csv", std::ios::out);
     refined_odom_csv << "%time\tfield.header.seq\tfield.header.stamp\tfield.header.frame_id\tfield.child_frame_id\t"
                     << "field.pose.pose.position.x\tfield.pose.pose.position.y\tfield.pose.pose.position.z\t"
                     << "field.pose.pose.orientation.x\tfield.pose.pose.orientation.y\tfield.pose.pose.orientation.z\tfield.pose.pose.orientation.w\t"
