@@ -153,9 +153,25 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     nh_.getParam("smoothingStartIndex_", smoothingStartIndex_);
 
     // Save localisation result
-    refined_odom_csv.open("/home/shuoyuan/catkin_slam_ws/src/aprilslamcpp/refined_odometry.csv", std::ios::out);
-    raw_odom_csv.open("/home/shuoyuan/catkin_slam_ws/src/aprilslamcpp/raw_odometry.csv", std::ios::out);
-    refined_odom_csv << "time,x,y,z,roll,pitch,yaw\n";
+    refined_odom_csv.open("/home/shuoyuan/catkin_aereh_ws/src/aprilslamcpp/refined_odometry.csv", std::ios::out);
+    raw_odom_csv.open("/home/shuoyuan/catkin_aereh_ws/src/aprilslamcpp/raw_odometry.csv", std::ios::out);
+    refined_odom_csv << "%time\tfield.header.seq\tfield.header.stamp\tfield.header.frame_id\tfield.child_frame_id\t"
+                    << "field.pose.pose.position.x\tfield.pose.pose.position.y\tfield.pose.pose.position.z\t"
+                    << "field.pose.pose.orientation.x\tfield.pose.pose.orientation.y\tfield.pose.pose.orientation.z\tfield.pose.pose.orientation.w\t"
+                    << "field.pose.covariance0\tfield.pose.covariance1\tfield.pose.covariance2\tfield.pose.covariance3\tfield.pose.covariance4\tfield.pose.covariance5\t"
+                    << "field.pose.covariance6\tfield.pose.covariance7\tfield.pose.covariance8\tfield.pose.covariance9\tfield.pose.covariance10\tfield.pose.covariance11\t"
+                    << "field.pose.covariance12\tfield.pose.covariance13\tfield.pose.covariance14\tfield.pose.covariance15\tfield.pose.covariance16\tfield.pose.covariance17\t"
+                    << "field.pose.covariance18\tfield.pose.covariance19\tfield.pose.covariance20\tfield.pose.covariance21\tfield.pose.covariance22\tfield.pose.covariance23\t"
+                    << "field.pose.covariance24\tfield.pose.covariance25\tfield.pose.covariance26\tfield.pose.covariance27\tfield.pose.covariance28\tfield.pose.covariance29\t"
+                    << "field.pose.covariance30\tfield.pose.covariance31\tfield.pose.covariance32\tfield.pose.covariance33\tfield.pose.covariance34\tfield.pose.covariance35\t"
+                    << "field.twist.twist.linear.x\tfield.twist.twist.linear.y\tfield.twist.twist.linear.z\t"
+                    << "field.twist.twist.angular.x\tfield.twist.twist.angular.y\tfield.twist.twist.angular.z\t"
+                    << "field.twist.covariance0\tfield.twist.covariance1\tfield.twist.covariance2\tfield.twist.covariance3\tfield.twist.covariance4\tfield.twist.covariance5\t"
+                    << "field.twist.covariance6\tfield.twist.covariance7\tfield.twist.covariance8\tfield.twist.covariance9\tfield.twist.covariance10\tfield.twist.covariance11\t"
+                    << "field.twist.covariance12\tfield.twist.covariance13\tfield.twist.covariance14\tfield.twist.covariance15\tfield.twist.covariance16\tfield.twist.covariance17\t"
+                    << "field.twist.covariance18\tfield.twist.covariance19\tfield.twist.covariance20\tfield.twist.covariance21\tfield.twist.covariance22\tfield.twist.covariance23\t"
+                    << "field.twist.covariance24\tfield.twist.covariance25\tfield.twist.covariance26\tfield.twist.covariance27\tfield.twist.covariance28\tfield.twist.covariance29\t"
+                    << "field.twist.covariance30\tfield.twist.covariance31\tfield.twist.covariance32\tfield.twist.covariance33\tfield.twist.covariance34\tfield.twist.covariance35\n";    
     raw_odom_csv << "time,x,y,z,roll,pitch,yaw\n";
 
     // Load saveLandmarks

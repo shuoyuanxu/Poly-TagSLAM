@@ -188,14 +188,30 @@ void publishRefinedOdom(ros::Publisher& odom_pub,
 
     // Save to CSV with roll, pitch, yaw
     double time = stamp.toSec();
+    static int seq = 0;
     refined_odom_csv << std::fixed << std::setprecision(6)
-                    << time << ","
-                    << refinedPose.translation().x() << ","
-                    << refinedPose.translation().y() << ","
-                    << refinedPose.translation().z() << ","
-                    << refinedPose.rotation().roll() << ","
-                    << refinedPose.rotation().pitch() << ","
-                    << refinedPose.rotation().yaw() << std::endl;
+                    << time << "\t"
+                    << seq++ << "\t"
+                    << time << "\t"
+                    << odom_frame << "\t"
+                    << base_link_frame << "\t"
+                    << refinedPose.translation().x() << "\t"
+                    << refinedPose.translation().y() << "\t"
+                    << refinedPose.translation().z() << "\t"
+                    << gtsam_quat.x() << "\t"
+                    << gtsam_quat.y() << "\t"
+                    << gtsam_quat.z() << "\t"
+                    << gtsam_quat.w() << "\t"
+                    // 36 pose covariances (all zero)
+                    << "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t"
+                    << "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t"
+                    << "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t"
+                    // 6 twist linear/angular (all zero)
+                    << "0\t0\t0\t0\t0\t0\t"
+                    // 36 twist covariances (all zero)
+                    << "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t"
+                    << "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t"
+                    << "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\n";
 }
 
 void saveLandmarksToCSV(const std::map<int, gtsam::Point3>& landmarks, const std::string& filename) {
