@@ -110,6 +110,7 @@ private:
     ros::Publisher path_pub_;
     ros::Publisher odom_traj_pub_;
     ros::Publisher landmark_pub_;
+    ros::Publisher survey_landmark_pub_;
     ros::Publisher lc_pub_;
     nav_msgs::Path path;
     ros::NodeHandle nh_;
@@ -254,7 +255,8 @@ private:
     bool use_survey_landmarks_;
     std::string survey_landmarks_path_;
     double survey_noise_sigma;
-    gtsam::noiseModel::Diagonal::shared_ptr surveyLandmarkNoise;        
+    gtsam::noiseModel::Diagonal::shared_ptr surveyLandmarkNoise;
+    std::map<int, gtsam::Point3> surveyLandmarks_;
 };
 } 
 

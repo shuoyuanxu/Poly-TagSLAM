@@ -177,6 +177,15 @@ Visualization Manager:
         PointCloud2: true
         Value: true
       Zoom Factor: 1
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /survey_landmarks
+      Name: MarkerArray
+      Namespaces:
+        survey_landmark_ids: true
+        survey_landmarks: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -243,5 +252,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1848
-  X: 408
-  Y: 263
+  X: 1250
+  Y: 198

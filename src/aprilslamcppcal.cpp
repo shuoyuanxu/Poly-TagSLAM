@@ -231,6 +231,7 @@ aprilslamcpp::aprilslamcpp(ros::NodeHandle node_handle)
     odom_sub_ = nh_.subscribe(odom_topic, 10, &aprilslamcpp::addOdomFactor, this);
     path_pub_ = nh_.advertise<nav_msgs::Path>(trajectory_topic, 1, true);
     landmark_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("landmarks", 1, true);
+    survey_landmark_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("survey_landmarks", 1, true);
     path.header.frame_id = map_frame_id; 
 
     // Timer to periodically check if valid data has been received by any camera
@@ -298,6 +299,8 @@ aprilslamcpp::~aprilslamcpp() {
 
     // Publish the pose and landmarks
     aprilslam::publishLandmarks(landmark_pub_, landmarks, map_frame_id);
+    if (use_survey_landmarks_)
+        aprilslam::publishLandmarks(survey_landmark_pub_, surveyLandmarks_, map_frame_id, 0.0f, 1.0f, 1.0f, "survey_");
     aprilslam::publishPath(path_pub_, keyframeEstimates_, index_of_pose, map_frame_id);
 
     // Save the optimized landmarks to CSV
@@ -595,10 +598,10 @@ void aprilslam::aprilslamcpp::initializeFirstPose(const gtsam::Pose3& poseSE3, g
         std::string prefix;
         nh_.getParam("survey_landmark_prefix", prefix);
         
-        std::map<int, gtsam::Point3> surveyLandmarks = loadSurveyLandmarks(survey_landmarks_path_, prefix);
-        ROS_INFO("Loaded %zu survey-grade landmarks", surveyLandmarks.size());
-        
-        for (const auto& landmark : surveyLandmarks) {
+        surveyLandmarks_ = loadSurveyLandmarks(survey_landmarks_path_, prefix);
+        ROS_INFO("Loaded %zu survey-grade landmarks", surveyLandmarks_.size());
+
+        for (const auto& landmark : surveyLandmarks_) {
             gtsam::Symbol landmarkKey('L', landmark.first);
             
             // Add VERY tight prior for survey landmarks
@@ -794,6 +797,8 @@ void aprilslam::aprilslamcpp::addOdomFactor(const nav_msgs::Odometry::ConstPtr& 
     
     // Publish visualization
     aprilslam::publishLandmarks(landmark_pub_, landmarks, map_frame_id);
+    if (use_survey_landmarks_)
+        aprilslam::publishLandmarks(survey_landmark_pub_, surveyLandmarks_, map_frame_id, 0.0f, 1.0f, 1.0f, "survey_");
     aprilslam::publishPath(path_pub_, keyframeEstimates_, index_of_pose, map_frame_id);
 
     // Periodically save landmarks

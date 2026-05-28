@@ -16,49 +16,47 @@ gtsam::Pose3 relPoseFG(const gtsam::Pose3& lastPoseSE3, const gtsam::Pose3& Pose
     return relativePose;
 } 
 
-void publishLandmarks(ros::Publisher& landmark_pub, const std::map<int, gtsam::Point3>& landmarks, const std::string& frame_id) {
+void publishLandmarks(ros::Publisher& landmark_pub, const std::map<int, gtsam::Point3>& landmarks,
+                      const std::string& frame_id, float r, float g, float b,
+                      const std::string& ns_prefix) {
     visualization_msgs::MarkerArray markers;
     int id = 0;
     for (const auto& landmark : landmarks) {
-        // Sphere marker for each landmark
         visualization_msgs::Marker marker;
         marker.header.frame_id = frame_id;
         marker.header.stamp = ros::Time::now();
-        marker.ns = "landmarks";
+        marker.ns = ns_prefix + "landmarks";
         marker.id = id++;
         marker.type = visualization_msgs::Marker::SPHERE;
         marker.action = visualization_msgs::Marker::ADD;
         marker.pose.position.x = landmark.second.x();
         marker.pose.position.y = landmark.second.y();
-        marker.pose.position.z = landmark.second.z();  
+        marker.pose.position.z = landmark.second.z();
         marker.scale.x = 0.2;
         marker.scale.y = 0.2;
         marker.scale.z = 0.2;
         marker.color.a = 1.0;
-        marker.color.r = 1.0;
-        marker.color.g = 0.0;
-        marker.color.b = 0.0;
-
+        marker.color.r = r;
+        marker.color.g = g;
+        marker.color.b = b;
         markers.markers.push_back(marker);
 
-        // Marker IDs
         visualization_msgs::Marker text_marker;
         text_marker.header.frame_id = frame_id;
         text_marker.header.stamp = ros::Time::now();
-        text_marker.ns = "landmark_ids";
+        text_marker.ns = ns_prefix + "landmark_ids";
         text_marker.id = id++;
         text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
         text_marker.action = visualization_msgs::Marker::ADD;
         text_marker.pose.position.x = landmark.second.x();
         text_marker.pose.position.y = landmark.second.y();
-        text_marker.pose.position.z = landmark.second.z() + 0.5;  
+        text_marker.pose.position.z = landmark.second.z() + 0.5;
         text_marker.scale.z = 0.2;
         text_marker.text = std::to_string(landmark.first);
         text_marker.color.a = 1.0;
         text_marker.color.r = 1.0;
         text_marker.color.g = 1.0;
         text_marker.color.b = 1.0;
-
         markers.markers.push_back(text_marker);
     }
 

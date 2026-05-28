@@ -59,10 +59,12 @@ namespace aprilslam {
                             std::ofstream& refined_odom_csv,
                             const ros::Time& stamp);
     
-    // Landmark publishing 
-    void publishLandmarks(ros::Publisher& landmark_pub, 
+    // Landmark publishing (r,g,b default to red for regular landmarks; ns_prefix scopes the RViz namespace)
+    void publishLandmarks(ros::Publisher& landmark_pub,
                          const std::map<int, gtsam::Point3>& landmarks,
-                         const std::string& frame_id);
+                         const std::string& frame_id,
+                         float r = 1.0f, float g = 0.0f, float b = 0.0f,
+                         const std::string& ns_prefix = "");
     
     // Path publishing 
     void publishPath(ros::Publisher& path_pub, 
