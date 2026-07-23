@@ -9,7 +9,7 @@ odom_frame: "odom"  # lboro data
 trajectory_topic: "trajectory"
 map_frame_id: "TagMap"
 pathtosavelandmarkcsv: "config/landmark.csv"
-pathtoloadlandmarkcsv: "config/afteroptimisation.csv"
+pathtoloadlandmarkcsv: "config/hard1_after.csv"
 savetaglocation: false
 usepriortagtable: true
 batch_optimisation: true
@@ -47,7 +47,7 @@ jumpCombinedThreshold: 1
 outlierRemovalStartIndex_: 20 
 
 # Trajectory smooth
-usetrajsmoothing: true
+usetrajsmoothing: false
 smoothingStartIndex_: 20 
 smoothingwindow: 3
 

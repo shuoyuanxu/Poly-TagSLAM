@@ -1,0 +1,8 @@
+<launch>
+  <arg name="ts_file" default="config/hard_ts.csv"/>
+
+  <rosparam file="$(find aprilslamcpp)/config/params_calibration.yaml" command="load"/>
+  <param name="path_to_survey_landmarks" value="$(arg ts_file)"/>
+
+  <node name="aprilslamcpp" pkg="aprilslamcpp" type="aprilslamcpp_cal" output="screen"/>
+</launch>

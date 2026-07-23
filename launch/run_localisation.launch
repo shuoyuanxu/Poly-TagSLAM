@@ -1,6 +1,9 @@
 <launch>
+  <arg name="landmark_file" default="config/hard1_after.csv"/>
+
   <!-- Load parameters -->
   <rosparam file="$(find aprilslamcpp)/config/params_localisation.yaml" command="load"/>
+  <param name="pathtoloadlandmarkcsv" value="$(arg landmark_file)"/>
 
   <!-- TagSLAM Node -->
   <node name="aprilslamcpp" pkg="aprilslamcpp" type="aprilslamcpp_loc" output="screen">

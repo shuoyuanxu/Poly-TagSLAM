@@ -1,6 +1,17 @@
 <launch>
+  <arg name="ts_file" default="config/hard_ts.csv"/>
+  <arg name="use_pole_constraints" default="true"/>
+  <arg name="use_survey_landmarks" default="false"/>
+  <arg name="pole_constraints_file" default="config/pole_constraints.csv"/>
+  <arg name="ts_sigma" default="0.01"/>
+
   <!-- Load parameters -->
   <rosparam file="$(find aprilslamcpp)/config/params_calibration.yaml" command="load"/>
+  <param name="path_to_survey_landmarks" value="$(arg ts_file)"/>
+  <param name="use_pole_constraints" value="$(arg use_pole_constraints)"/>
+  <param name="use_survey_landmarks" value="$(arg use_survey_landmarks)"/>
+  <param name="pole_constraints_file" value="$(arg pole_constraints_file)"/>
+  <param name="survey_landmark_noise" value="$(arg ts_sigma)"/>
 
   <!-- TagSLAM Node -->
   <node name="aprilslamcpp" pkg="aprilslamcpp" type="aprilslamcpp_cal" output="screen">
